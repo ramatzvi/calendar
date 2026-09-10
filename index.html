@@ -244,6 +244,8 @@
       <button data-view="week" class="view-tab px-3 py-1.5 rounded-md text-sm font-semibold font-display transition-colors" role="tab">שבוע</button>
       <button data-view="day" class="view-tab px-3 py-1.5 rounded-md text-sm font-semibold font-display transition-colors" role="tab">יום</button>
     </div>
+
+    <img id="brandLogo" src="RamatZviLogo.png" alt="רמת צבי" class="h-9 w-auto shrink-0 rounded-md order-last">
   </div>
 
   <div class="flex items-center justify-end gap-3 flex-wrap px-4 md:px-6 py-2 border-t border-edge">
@@ -374,10 +376,9 @@
 
   /* ---------------- CONFIG & DATA ---------------- */
 
-  // Demo reference "today" — pinned to 9 Sep 2026 so the seed data and the
-  // "today" highlight always line up in this preview. In production this
-  // becomes `new Date()`.
-  var TODAY = new Date(2026, 8, 9);
+  // "Today" reference for the today-highlight and the now-line. Captured
+  // once at load (a tab left open for days won't roll over on its own).
+  var TODAY = new Date();
 
   // Cached copy of the "CalendarLocations" Google Sheet (Drive file
   // DRIVE_LOCATIONS_FILE_ID, RamatZvi folder) — shown instantly on load,
