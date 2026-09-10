@@ -12,6 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@500;600;700;800&family=IBM+Plex+Sans+Hebrew:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
   tailwind.config = {
     theme: {
@@ -246,15 +247,19 @@
   </div>
 
   <div class="flex items-center justify-end gap-3 flex-wrap px-4 md:px-6 py-2 border-t border-edge">
-    <div class="flex items-center gap-3 shrink-0">
-      <button id="resetBtn" class="text-xs font-body text-ink2 hover:text-accent underline underline-offset-2 decoration-dotted">איפוס נתוני דוגמה</button>
-      <label class="flex items-center gap-1.5 text-xs font-body text-ink2">
-        <span class="hidden sm:inline">מחובר/ת בתור</span>
-        <select id="roleSelect" class="field-input rounded-md text-xs font-semibold font-display py-1 pr-2 pl-7 text-ink">
-          <option value="editor">עופר — עורך</option>
-          <option value="viewer">אורח — צפייה בלבד</option>
-        </select>
-      </label>
+    <div id="authArea" class="flex items-center gap-3 shrink-0">
+      <p id="syncStatus" class="text-[11px] font-body text-ink2"></p>
+      <div id="authSignedOut" class="flex items-center">
+        <button id="signInBtn" type="button" class="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-edge bg-surface text-xs font-semibold font-display text-ink hover:bg-surfacealt transition-colors">
+          <svg width="14" height="14" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-2.1 14.1-5.6l-6.5-5.5C29.6 34.9 27 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5c3.3 6.6 10 11 17.8 11z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.7l6.5 5.5C39.9 37.4 44 31.4 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
+          התחברות עם Google
+        </button>
+      </div>
+      <div id="authSignedIn" hidden class="flex items-center gap-2">
+        <img id="authAvatar" class="w-6 h-6 rounded-full" alt="">
+        <span id="authName" class="hidden sm:inline text-xs font-body text-ink2"></span>
+        <button id="signOutBtn" type="button" class="text-xs font-body text-ink2 hover:text-accent underline underline-offset-2 decoration-dotted">התנתקות</button>
+      </div>
     </div>
   </div>
 </header>
@@ -387,12 +392,24 @@
     { id: 'חורשת נועם', name: 'חורשת נועם', color: '#00ffff' },
   ];
 
-  // Placeholder allow-list for who can create/edit/delete events. In the
-  // real build this is checked against the signed-in Google account email
-  // (and can itself be sourced from a tab in the same Google Sheet).
-  var ALLOWED_EDITOR_EMAILS = [
-    'ofir.landshaft@gmail.com',
-  ];
+  // Google Sign-In + Sheets-backed shared calendar. Events live in the
+  // "CalendarEvents" Google Sheet (tab "Events"), shared "Anyone with the
+  // link: Viewer" so every visitor can read it with just the API key
+  // below. Writing to it requires a signed-in Google account that the
+  // Sheet's own Share dialog has granted "Editor" on — THAT share list is
+  // the real, enforced list of who can add/edit/delete events. There is
+  // no hardcoded email list in this file anymore: to give someone edit
+  // access, open the Sheet and add them as an Editor; to revoke it,
+  // remove them there. (While the Google Cloud OAuth consent screen for
+  // this app stays in "Testing" mode, a person also needs to be added as
+  // a Test User in that project before they can complete sign-in at all —
+  // capped at 100 people.)
+  var GOOGLE_CLIENT_ID = '1040737140720-mvm3s71f8ehe83v8b9697q9eotdp6npi.apps.googleusercontent.com';
+  var GOOGLE_API_KEY = 'AIzaSyDct7sTIDDxtY0x92PuUBC_6x49QCkgXWU';
+  var EVENTS_SHEET_ID = '1roT8Rbqwtg43wG4WWH4bzaxpRmJxGg3K0PIMV3PSFjo';
+  var EVENTS_SHEET_TAB = 'Events';
+  var EVENTS_READ_RANGE = EVENTS_SHEET_TAB + '!A2:H100000';
+  var EVENTS_COLUMNS = ['id', 'title', 'date', 'start', 'end', 'location', 'description', 'updated'];
 
   function seedEvents() {
     return [
@@ -420,40 +437,200 @@
   var state = {
     view: 'month',
     cursor: new Date(TODAY),
-    role: 'editor',
     events: [],
     editingId: null,
   };
 
-  var STORE_KEY = 'gridline_events_v1';
-  var ROLE_KEY = 'gridline_role_v1';
+  // Google auth state. accessToken carries the "spreadsheets" scope, so
+  // its mere presence is what lets the app ATTEMPT a write — the Sheet's
+  // own permissions are what actually decide whether that write succeeds.
+  var authState = { signedIn: false, email: null, name: null, picture: null, accessToken: null };
+  var tokenClient = null;
 
-  function loadEvents() {
-    try {
-      var raw = localStorage.getItem(STORE_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    return seedEvents();
-  }
-  function saveEvents() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(state.events)); } catch (e) {}
-  }
-  function loadRole() {
-    try {
-      var r = localStorage.getItem(ROLE_KEY);
-      if (r === 'editor' || r === 'viewer') return r;
-    } catch (e) {}
-    return 'editor';
-  }
-  function saveRole() {
-    try { localStorage.setItem(ROLE_KEY, state.role); } catch (e) {}
-  }
+  // Maps an event id -> its 1-based row number in the Events sheet
+  // (populated by loadEventsFromSheet), so edits/deletes can target the
+  // right row without re-reading the whole sheet first.
+  var sheetRowById = {};
 
   function locationById(id) {
     for (var i = 0; i < LOCATIONS.length; i++) if (LOCATIONS[i].id === id) return LOCATIONS[i];
     return LOCATIONS[0];
   }
-  function isEditor() { return state.role === 'editor'; }
+  // Optimistic UI gate: a signed-in user sees the add/edit/delete
+  // controls. The real gate is the Sheets API write itself, which 403s
+  // for anyone not on the Sheet's Editor list — see handleSheetsWriteError.
+  function isEditor() { return !!(authState.signedIn && authState.accessToken); }
+
+  /* ---------------- GOOGLE SIGN-IN ---------------- */
+
+  function initGoogleAuth() {
+    if (!window.google || !google.accounts || !google.accounts.oauth2) {
+      // Google Identity Services failed to load (offline, blocked, etc).
+      // The app still works read-only from the public sheet below.
+      document.getElementById('signInBtn').disabled = true;
+      document.getElementById('signInBtn').title = 'שירות ההתחברות של Google לא נטען.';
+      return;
+    }
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'openid email profile https://www.googleapis.com/auth/spreadsheets',
+      callback: function (resp) {
+        if (!resp || resp.error) {
+          showToast('ההתחברות עם Google נכשלה.');
+          return;
+        }
+        authState.accessToken = resp.access_token;
+        fetchUserInfo();
+      },
+    });
+  }
+
+  function signIn() {
+    if (!tokenClient) { showToast('שירות ההתחברות של Google לא נטען.'); return; }
+    tokenClient.requestAccessToken({ prompt: authState.email ? '' : 'consent' });
+  }
+
+  function signOut() {
+    if (authState.accessToken && google.accounts && google.accounts.oauth2) {
+      google.accounts.oauth2.revoke(authState.accessToken, function () {});
+    }
+    authState = { signedIn: false, email: null, name: null, picture: null, accessToken: null };
+    renderAuthUI();
+    renderAll();
+    showToast('התנתקת. הלוח מוצג כעת לצפייה בלבד.');
+  }
+
+  function fetchUserInfo() {
+    fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: 'Bearer ' + authState.accessToken },
+    }).then(function (r) {
+      if (!r.ok) throw new Error('userinfo failed');
+      return r.json();
+    }).then(function (info) {
+      authState.signedIn = true;
+      authState.email = info.email || null;
+      authState.name = info.name || info.email || '';
+      authState.picture = info.picture || '';
+      renderAuthUI();
+      showToast('מחובר/ת בתור ' + authState.name + '. ניתן להוסיף, לערוך ולמחוק אירועים.');
+      renderAll();
+    }).catch(function () {
+      showToast('ההתחברות הצליחה אך לא ניתן היה לטעון את פרטי המשתמש.');
+    });
+  }
+
+  function renderAuthUI() {
+    var outEl = document.getElementById('authSignedOut');
+    var inEl = document.getElementById('authSignedIn');
+    if (authState.signedIn) {
+      outEl.hidden = true;
+      inEl.hidden = false;
+      document.getElementById('authAvatar').src = authState.picture || '';
+      document.getElementById('authName').textContent = authState.name || '';
+    } else {
+      outEl.hidden = false;
+      inEl.hidden = true;
+    }
+  }
+
+  function setSyncStatus(msg) {
+    var el = document.getElementById('syncStatus');
+    if (el) el.textContent = msg || '';
+  }
+
+  // A write's own outcome is the real permission check: 403 means this
+  // signed-in account is not an Editor on the Events sheet.
+  function handleSheetsWriteError(err) {
+    if (err && err.code === 403) {
+      showToast('החשבון שלך מחובר, אך אין לו הרשאת עריכה בגיליון האירועים. יש לבקש מבעל/ת הלוח הרשאת "עורך" בגיליון.');
+    } else if (err && err.code === 401) {
+      showToast('תוקף ההתחברות פג. יש להתחבר שוב.');
+      signOut();
+    } else {
+      showToast('השמירה נכשלה. יש לנסות שוב.');
+    }
+  }
+
+  /* ---------------- SHARED EVENTS (Google Sheets) ---------------- */
+
+  var eventsSyncInFlight = null;
+  function loadEventsFromSheet() {
+    setSyncStatus('מסנכרן אירועים…');
+    var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + EVENTS_SHEET_ID +
+      '/values/' + encodeURIComponent(EVENTS_READ_RANGE) + '?key=' + GOOGLE_API_KEY;
+    eventsSyncInFlight = fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('sheets read failed: ' + r.status);
+      return r.json();
+    }).then(function (data) {
+      var rows = data.values || [];
+      var events = [];
+      var rowMap = {};
+      rows.forEach(function (row, i) {
+        var id = row[0];
+        if (!id) return; // blank id = deleted row
+        rowMap[id] = i + 2; // +2: 1-based rows, header occupies row 1
+        events.push({
+          id: id,
+          title: row[1] || '',
+          date: row[2] || '',
+          start: row[3] || '',
+          end: row[4] || '',
+          location: row[5] || '',
+          description: row[6] || '',
+        });
+      });
+      sheetRowById = rowMap;
+      state.events = events;
+      setSyncStatus('');
+      renderAll();
+    }).catch(function () {
+      setSyncStatus('');
+      if (!state.events.length) {
+        state.events = seedEvents();
+        renderAll();
+      }
+      showToast('לא ניתן לטעון את האירועים מהגיליון המשותף כרגע.');
+    });
+    return eventsSyncInFlight;
+  }
+
+  function sheetsWrite(method, pathAndQuery, body) {
+    var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + EVENTS_SHEET_ID + pathAndQuery;
+    return fetch(url, {
+      method: method,
+      headers: {
+        'Authorization': 'Bearer ' + authState.accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body || {}),
+    }).then(function (r) {
+      if (!r.ok) { var err = new Error('sheets write failed: ' + r.status); err.code = r.status; throw err; }
+      return r.json();
+    });
+  }
+
+  function eventToRow(id, data) {
+    return [id, data.title, data.date, data.start, data.end, data.location, data.description, new Date().toISOString()];
+  }
+
+  function appendEventRow(id, data) {
+    var range = encodeURIComponent(EVENTS_SHEET_TAB + '!A:H');
+    return sheetsWrite('POST', '/values/' + range + ':append?valueInputOption=USER_ENTERED', { values: [eventToRow(id, data)] });
+  }
+
+  function updateEventRow(id, data) {
+    var sheetRow = sheetRowById[id];
+    if (!sheetRow) return Promise.reject({ code: 'not_found' });
+    var range = encodeURIComponent(EVENTS_SHEET_TAB + '!A' + sheetRow + ':H' + sheetRow);
+    return sheetsWrite('PUT', '/values/' + range + '?valueInputOption=USER_ENTERED', { values: [eventToRow(id, data)] });
+  }
+
+  function clearEventRow(id) {
+    var sheetRow = sheetRowById[id];
+    if (!sheetRow) return Promise.reject({ code: 'not_found' });
+    var range = encodeURIComponent(EVENTS_SHEET_TAB + '!A' + sheetRow + ':H' + sheetRow);
+    return sheetsWrite('POST', '/values/' + range + ':clear', {});
+  }
 
   /* ---------------- LIVE LOCATION SYNC (Google Drive) ---------------- */
   // Pulls the current locations + colors straight from the
@@ -843,6 +1020,8 @@
 
   eventForm.addEventListener('submit', function (e) {
     e.preventDefault();
+    if (!isEditor()) { showToast('כדי לשמור אירועים יש להתחבר עם Google.'); return; }
+
     var start = document.getElementById('evtStart').value;
     var end = document.getElementById('evtEnd').value;
     if (minutesOf(end) <= minutesOf(start)) {
@@ -860,18 +1039,20 @@
       description: document.getElementById('evtDescription').value.trim(),
     };
 
-    if (state.editingId) {
-      var idx = state.events.findIndex(function (ev) { return ev.id === state.editingId; });
-      if (idx !== -1) state.events[idx] = Object.assign({ id: state.editingId }, data);
-      showToast('האירוע עודכן.');
-    } else {
-      data.id = 'e' + Date.now();
-      state.events.push(data);
-      showToast('האירוע נוסף.');
-    }
-    saveEvents();
-    closeFormModal();
-    renderAll();
+    var isEdit = !!state.editingId;
+    var id = isEdit ? state.editingId : ('e' + Date.now());
+    var submitBtn = document.getElementById('formSubmitBtn');
+    submitBtn.disabled = true;
+
+    (isEdit ? updateEventRow(id, data) : appendEventRow(id, data)).then(function () {
+      showToast(isEdit ? 'האירוע עודכן.' : 'האירוע נוסף.');
+      closeFormModal();
+      return loadEventsFromSheet();
+    }).catch(function (err) {
+      handleSheetsWriteError(err);
+    }).then(function () {
+      submitBtn.disabled = false;
+    });
   });
 
   document.getElementById('formCloseBtn').addEventListener('click', closeFormModal);
@@ -928,11 +1109,14 @@
   }
 
   function deleteEvent(id) {
-    state.events = state.events.filter(function (e) { return e.id !== id; });
-    saveEvents();
-    closeViewModal();
-    renderAll();
-    showToast('האירוע נמחק.');
+    if (!isEditor()) { showToast('כדי למחוק אירועים יש להתחבר עם Google.'); return; }
+    clearEventRow(id).then(function () {
+      closeViewModal();
+      showToast('האירוע נמחק.');
+      return loadEventsFromSheet();
+    }).catch(function (err) {
+      handleSheetsWriteError(err);
+    });
   }
 
   function closeViewModal() { viewBackdrop.hidden = true; confirmingDeleteId = null; }
@@ -1000,18 +1184,8 @@
   document.getElementById('prevBtn').addEventListener('click', function () { navigate(-1); });
   document.getElementById('nextBtn').addEventListener('click', function () { navigate(1); });
 
-  document.getElementById('roleSelect').addEventListener('change', function (e) {
-    state.role = e.target.value;
-    saveRole();
-    showToast(isEditor() ? 'מוצג במצב עורך — ניתן להוסיף, לערוך ולמחוק אירועים.' : 'מוצג במצב אורח — צפייה בלבד.');
-  });
-
-  document.getElementById('resetBtn').addEventListener('click', function () {
-    state.events = seedEvents();
-    saveEvents();
-    renderAll();
-    showToast('נתוני הדוגמה שוחזרו.');
-  });
+  document.getElementById('signInBtn').addEventListener('click', signIn);
+  document.getElementById('signOutBtn').addEventListener('click', signOut);
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { closeFormModal(); closeViewModal(); }
@@ -1019,10 +1193,14 @@
 
   /* ---------------- INIT ---------------- */
 
-  state.events = loadEvents();
-  state.role = loadRole();
-  document.getElementById('roleSelect').value = state.role;
+  // Show something immediately, then replace it with the real shared
+  // data as soon as the sheet responds.
+  state.events = seedEvents();
   setView('month');
+  initGoogleAuth();
+  loadEventsFromSheet();
+  // Keep the calendar in sync with what other people add/edit/delete.
+  setInterval(loadEventsFromSheet, 30000);
 })();
 </script>
 
