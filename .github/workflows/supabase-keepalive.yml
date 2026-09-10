@@ -1,0 +1,32 @@
+name: Supabase keep-alive
+
+# Supabase free-tier projects are paused after ~7 days with no database
+# activity, and a paused project has to be un-paused by hand from the
+# dashboard before the calendar works again. This job pings the REST API
+# once a day so the project never idles out.
+#
+# The key below is the PUBLIC "publishable" key — the same one already in
+# index.html. It is safe to commit. If it is ever rotated, change it in
+# both places (or move it to an Actions secret and use ${{ secrets.NAME }}).
+#
+# NOTE: GitHub disables scheduled workflows in a repo with no commits for
+# 60 days. As long as the calendar gets the occasional tweak this stays
+# alive; if the repo goes quiet for months, either push any commit or add
+# a second pinger (e.g. a free cron-job.org monitor on the same URL).
+
+on:
+  schedule:
+    - cron: '23 5 * * *'   # every day at 05:23 UTC
+  workflow_dispatch:        # ...and a manual "Run workflow" button
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            'https://slsfqlgtthqgkiysywdz.supabase.co/rest/v1/events?select=id&limit=1' \
+            -H 'apikey: sb_publishable_zcb1SwmWcKppK9XhZBngUA_VxEkifU-')
+          echo "Supabase responded HTTP $code"
+          test "$code" = "200"

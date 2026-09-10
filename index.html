@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@500;600;700;800&family=IBM+Plex+Sans+Hebrew:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
   tailwind.config = {
     theme: {
@@ -312,7 +312,6 @@
             <select id="evtLocation" required class="field-input rounded-md px-3 py-2 text-sm font-body flex-1"></select>
           </div>
           <p class="text-[11px] font-body text-ink2">צבע האירוע נקבע אוטומטית לפי המיקום.</p>
-          <p id="locationSyncStatus" hidden class="text-[11px] font-body text-accent"></p>
         </div>
 
         <div class="flex flex-col gap-1">
@@ -379,37 +378,26 @@
   // once at load (a tab left open for days won't roll over on its own).
   var TODAY = new Date();
 
-  // Cached copy of the "CalendarLocations" Google Sheet (Drive file
-  // DRIVE_LOCATIONS_FILE_ID, RamatZvi folder) — shown instantly on load,
-  // then refreshed live from the sheet each time the event form opens
-  // (see fetchLocationsFromDrive). The location NAME doubles as its id,
-  // so it stays stable across a live refresh; rename a row in the sheet
-  // and events pointing at the old name just fall back gracefully.
-  var DRIVE_LOCATIONS_FILE_ID = '1rR2klsw5kBqWfdQaR2RyeDZN5RZIazqdlaEn0Z1u6cc';
+  // Event locations + their calendar colours. The location NAME doubles
+  // as its id, so events reference it by name; rename one here and any
+  // event still pointing at the old name falls back to the first entry.
+  // Edit this list to add / rename / recolour a location.
   var LOCATIONS = [
     { id: 'בית העם', name: 'בית העם', color: '#ecec4b' },
     { id: 'בית אופיר', name: 'בית אופיר', color: '#ff0000' },
     { id: 'חורשת נועם', name: 'חורשת נועם', color: '#00ffff' },
   ];
 
-  // Google Sign-In + Sheets-backed shared calendar. Events live in the
-  // "CalendarEvents" Google Sheet (tab "Events"), shared "Anyone with the
-  // link: Viewer" so every visitor can read it with just the API key
-  // below. Writing to it requires a signed-in Google account that the
-  // Sheet's own Share dialog has granted "Editor" on — THAT share list is
-  // the real, enforced list of who can add/edit/delete events. There is
-  // no hardcoded email list in this file anymore: to give someone edit
-  // access, open the Sheet and add them as an Editor; to revoke it,
-  // remove them there. (While the Google Cloud OAuth consent screen for
-  // this app stays in "Testing" mode, a person also needs to be added as
-  // a Test User in that project before they can complete sign-in at all —
-  // capped at 100 people.)
-  var GOOGLE_CLIENT_ID = '1040737140720-mvm3s71f8ehe83v8b9697q9eotdp6npi.apps.googleusercontent.com';
-  var GOOGLE_API_KEY = 'AIzaSyDct7sTIDDxtY0x92PuUBC_6x49QCkgXWU';
-  var EVENTS_SHEET_ID = '1roT8Rbqwtg43wG4WWH4bzaxpRmJxGg3K0PIMV3PSFjo';
-  var EVENTS_SHEET_TAB = 'Events';
-  var EVENTS_READ_RANGE = EVENTS_SHEET_TAB + '!A2:H100000';
-  var EVENTS_COLUMNS = ['id', 'title', 'date', 'start', 'end', 'location', 'description', 'updated'];
+  // Supabase-backed shared calendar. Events live in the "events" table of
+  // the Supabase project below. Everyone can READ it with the publishable
+  // key (Row Level Security policy "public read"); WRITING requires a
+  // signed-in Google account whose email is in the "editors" table —
+  // enforced server-side by RLS, not by this file. To grant/revoke edit
+  // access, add/remove a row in that "editors" table (Supabase dashboard
+  // → Table editor). Both values here are safe to expose in client code.
+  var SUPABASE_URL = 'https://slsfqlgtthqgkiysywdz.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_zcb1SwmWcKppK9XhZBngUA_VxEkifU-';
+  var sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
   function seedEvents() {
     return [
@@ -441,94 +429,58 @@
     editingId: null,
   };
 
-  // Google auth state. accessToken carries the "spreadsheets" scope, so
-  // its mere presence is what lets the app ATTEMPT a write — the Sheet's
-  // own permissions are what actually decide whether that write succeeds.
-  var authState = { signedIn: false, email: null, name: null, picture: null, accessToken: null };
-  var tokenClient = null;
-
-  // Maps an event id -> its 1-based row number in the Events sheet
-  // (populated by loadEventsFromSheet), so edits/deletes can target the
-  // right row without re-reading the whole sheet first.
-  var sheetRowById = {};
+  // Google auth state, mirrored from the Supabase session. Its mere
+  // presence (signedIn) is what lets the app ATTEMPT a write; the
+  // "editors" RLS policy is what actually decides whether it succeeds.
+  var authState = { signedIn: false, email: null, name: null, picture: null };
 
   function locationById(id) {
     for (var i = 0; i < LOCATIONS.length; i++) if (LOCATIONS[i].id === id) return LOCATIONS[i];
     return LOCATIONS[0];
   }
   // Optimistic UI gate: a signed-in user sees the add/edit/delete
-  // controls. The real gate is the Sheets API write itself, which 403s
-  // for anyone not on the Sheet's Editor list — see handleSheetsWriteError.
-  function isEditor() { return !!(authState.signedIn && authState.accessToken); }
+  // controls. The real gate is the write itself, which fails with a
+  // permission error for anyone not in the "editors" table — see
+  // handleWriteError.
+  function isEditor() { return !!authState.signedIn; }
 
-  /* ---------------- GOOGLE SIGN-IN ---------------- */
+  /* ---------------- GOOGLE SIGN-IN (via Supabase Auth) ---------------- */
 
-  // The GIS script tag is async, so it can finish loading well after this
-  // inline script has already run — poll briefly instead of assuming it's
-  // ready immediately.
-  function initGoogleAuthWhenReady(attemptsLeft) {
-    if (window.google && google.accounts && google.accounts.oauth2) { initGoogleAuth(); return; }
-    if (attemptsLeft <= 0) { initGoogleAuth(); return; } // will report the failure state
-    setTimeout(function () { initGoogleAuthWhenReady(attemptsLeft - 1); }, 200);
+  // Supabase owns the OAuth redirect, the session and its hourly refresh.
+  // authState is just a local mirror of session.user for the header UI
+  // and the isEditor() gate.
+  function applySession(session, announce) {
+    var u = session && session.user;
+    if (!u) { clearSession(); return; }
+    authState.signedIn = true;
+    authState.email = u.email || null;
+    var meta = u.user_metadata || {};
+    authState.name = meta.full_name || meta.name || u.email || '';
+    authState.picture = meta.avatar_url || meta.picture || '';
+    renderAuthUI();
+    renderAll();
+    if (announce) showToast('מחובר/ת בתור ' + authState.name + '. ניתן להוסיף, לערוך ולמחוק אירועים.');
   }
 
-  function initGoogleAuth() {
-    if (!window.google || !google.accounts || !google.accounts.oauth2) {
-      // Google Identity Services failed to load (offline, blocked, etc).
-      // The app still works read-only from the public sheet below.
-      document.getElementById('signInBtn').disabled = true;
-      document.getElementById('signInBtn').title = 'שירות ההתחברות של Google לא נטען.';
-      return;
-    }
-    tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      // NOTE: deliberately no "openid" scope here — Google's token-client
-      // (implicit) flow rejects it with "Error 400: invalid_request /
-      // doesn't comply with Google's OAuth 2.0 policy". Plain "email" +
-      // "profile" are enough for the userinfo call below.
-      scope: 'email profile https://www.googleapis.com/auth/spreadsheets',
-      callback: function (resp) {
-        if (!resp || resp.error) {
-          showToast('ההתחברות עם Google נכשלה.');
-          return;
-        }
-        authState.accessToken = resp.access_token;
-        fetchUserInfo();
-      },
-    });
+  function clearSession() {
+    authState = { signedIn: false, email: null, name: null, picture: null };
+    renderAuthUI();
+    renderAll();
   }
 
   function signIn() {
-    if (!tokenClient) { showToast('שירות ההתחברות של Google לא נטען.'); return; }
-    tokenClient.requestAccessToken({ prompt: authState.email ? '' : 'consent' });
+    sb.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: location.origin + location.pathname },
+    }).then(function (res) {
+      if (res && res.error) showToast('ההתחברות עם Google נכשלה.');
+    });
   }
 
   function signOut() {
-    if (authState.accessToken && google.accounts && google.accounts.oauth2) {
-      google.accounts.oauth2.revoke(authState.accessToken, function () {});
-    }
-    authState = { signedIn: false, email: null, name: null, picture: null, accessToken: null };
-    renderAuthUI();
-    renderAll();
-    showToast('התנתקת. הלוח מוצג כעת לצפייה בלבד.');
-  }
-
-  function fetchUserInfo() {
-    fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: 'Bearer ' + authState.accessToken },
-    }).then(function (r) {
-      if (!r.ok) throw new Error('userinfo failed');
-      return r.json();
-    }).then(function (info) {
-      authState.signedIn = true;
-      authState.email = info.email || null;
-      authState.name = info.name || info.email || '';
-      authState.picture = info.picture || '';
-      renderAuthUI();
-      showToast('מחובר/ת בתור ' + authState.name + '. ניתן להוסיף, לערוך ולמחוק אירועים.');
-      renderAll();
-    }).catch(function () {
-      showToast('ההתחברות הצליחה אך לא ניתן היה לטעון את פרטי המשתמש.');
+    sb.auth.signOut().then(function () {
+      clearSession();
+      showToast('התנתקת. הלוח מוצג כעת לצפייה בלבד.');
     });
   }
 
@@ -551,12 +503,14 @@
     if (el) el.textContent = msg || '';
   }
 
-  // A write's own outcome is the real permission check: 403 means this
-  // signed-in account is not an Editor on the Events sheet.
-  function handleSheetsWriteError(err) {
-    if (err && err.code === 403) {
-      showToast('החשבון שלך מחובר, אך אין לו הרשאת עריכה בגיליון האירועים. יש לבקש מבעל/ת הלוח הרשאת "עורך" בגיליון.');
-    } else if (err && err.code === 401) {
+  // A write's own outcome is the real permission check: an RLS/permission
+  // error (Postgres 42501, or HTTP 401/403) means this signed-in account
+  // is not in the "editors" table.
+  function handleWriteError(err) {
+    var code = err && (err.code || err.status);
+    if (code === '42501' || code === 403 || code === '403') {
+      showToast('החשבון שלך מחובר, אך אין לו הרשאת עריכה. יש לבקש מבעל/ת הלוח להוסיף אותך לרשימת העורכים.');
+    } else if (code === 401 || code === '401' || code === 'PGRST301') {
       showToast('תוקף ההתחברות פג. יש להתחבר שוב.');
       signOut();
     } else {
@@ -564,162 +518,68 @@
     }
   }
 
-  /* ---------------- SHARED EVENTS (Google Sheets) ---------------- */
+  /* ---------------- SHARED EVENTS (Supabase) ---------------- */
+
+  function rowToEvent(r) {
+    return {
+      id: r.id,
+      title: r.title || '',
+      date: r.date || '',
+      start: String(r.start || '').slice(0, 5),   // Postgres "time" returns HH:MM:SS
+      end: String(r.end || '').slice(0, 5),
+      location: r.location || '',
+      description: r.description || '',
+    };
+  }
 
   var eventsSyncInFlight = null;
-  function loadEventsFromSheet() {
+  function loadEvents() {
     setSyncStatus('מסנכרן אירועים…');
-    var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + EVENTS_SHEET_ID +
-      '/values/' + encodeURIComponent(EVENTS_READ_RANGE) + '?key=' + GOOGLE_API_KEY;
-    eventsSyncInFlight = fetch(url).then(function (r) {
-      if (!r.ok) throw new Error('sheets read failed: ' + r.status);
-      return r.json();
-    }).then(function (data) {
-      var rows = data.values || [];
-      var events = [];
-      var rowMap = {};
-      rows.forEach(function (row, i) {
-        var id = row[0];
-        if (!id) return; // blank id = deleted row
-        rowMap[id] = i + 2; // +2: 1-based rows, header occupies row 1
-        events.push({
-          id: id,
-          title: row[1] || '',
-          date: row[2] || '',
-          start: row[3] || '',
-          end: row[4] || '',
-          location: row[5] || '',
-          description: row[6] || '',
-        });
-      });
-      sheetRowById = rowMap;
-      state.events = events;
-      setSyncStatus('');
-      renderAll();
-    }).catch(function () {
-      setSyncStatus('');
-      if (!state.events.length) {
-        state.events = seedEvents();
+    eventsSyncInFlight = sb.from('events')
+      .select('id,title,date,start:start_time,end:end_time,location,description')
+      .order('date', { ascending: true })
+      .order('start_time', { ascending: true })
+      .then(function (res) {
+        if (res.error) throw res.error;
+        state.events = (res.data || []).map(rowToEvent);
+        setSyncStatus('');
         renderAll();
-      }
-      showToast('לא ניתן לטעון את האירועים מהגיליון המשותף כרגע.');
-    });
+      })
+      .catch(function () {
+        setSyncStatus('');
+        if (!state.events.length) { state.events = seedEvents(); renderAll(); }
+        showToast('לא ניתן לטעון את האירועים כרגע.');
+      });
     return eventsSyncInFlight;
   }
 
-  function sheetsWrite(method, pathAndQuery, body) {
-    var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + EVENTS_SHEET_ID + pathAndQuery;
-    return fetch(url, {
-      method: method,
-      headers: {
-        'Authorization': 'Bearer ' + authState.accessToken,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body || {}),
-    }).then(function (r) {
-      if (!r.ok) { var err = new Error('sheets write failed: ' + r.status); err.code = r.status; throw err; }
-      return r.json();
+  function eventPayload(data) {
+    return {
+      title: data.title,
+      date: data.date,
+      start_time: data.start,
+      end_time: data.end,
+      location: data.location,
+      description: data.description,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  function insertEvent(data) {
+    return sb.from('events').insert(eventPayload(data)).then(function (res) {
+      if (res.error) throw res.error; return res;
     });
   }
 
-  function eventToRow(id, data) {
-    return [id, data.title, data.date, data.start, data.end, data.location, data.description, new Date().toISOString()];
-  }
-
-  function appendEventRow(id, data) {
-    var range = encodeURIComponent(EVENTS_SHEET_TAB + '!A:H');
-    return sheetsWrite('POST', '/values/' + range + ':append?valueInputOption=USER_ENTERED', { values: [eventToRow(id, data)] });
-  }
-
-  function updateEventRow(id, data) {
-    var sheetRow = sheetRowById[id];
-    if (!sheetRow) return Promise.reject({ code: 'not_found' });
-    var range = encodeURIComponent(EVENTS_SHEET_TAB + '!A' + sheetRow + ':H' + sheetRow);
-    return sheetsWrite('PUT', '/values/' + range + '?valueInputOption=USER_ENTERED', { values: [eventToRow(id, data)] });
-  }
-
-  function clearEventRow(id) {
-    var sheetRow = sheetRowById[id];
-    if (!sheetRow) return Promise.reject({ code: 'not_found' });
-    var range = encodeURIComponent(EVENTS_SHEET_TAB + '!A' + sheetRow + ':H' + sheetRow);
-    return sheetsWrite('POST', '/values/' + range + ':clear', {});
-  }
-
-  /* ---------------- LIVE LOCATION SYNC (Google Drive) ---------------- */
-  // Pulls the current locations + colors straight from the
-  // "CalendarLocations" sheet each time the event form opens, using the
-  // signed-in editor's own Google Drive connection — via window.claude,
-  // which only exists when this page runs as a Claude artifact. Hosted
-  // here on GitHub Pages, window.claude is undefined, so this always
-  // falls back to the LOCATIONS list baked into the file below; update
-  // that list by editing this file (or ask Claude to re-sync + republish
-  // it) whenever the sheet changes. If that connection
-  // isn't available (no connector, not granted, offline) this fails
-  // silently and the last-known list above keeps being used — nothing
-  // breaks for a viewer without Drive connected.
-
-  function b64ToUtf8(b64) {
-    var binary = atob(b64);
-    var bytes = new Uint8Array(binary.length);
-    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new TextDecoder('utf-8').decode(bytes);
-  }
-
-  function parseLocationsCsv(csv) {
-    var lines = csv.split(/\r\n|\n|\r/).filter(function (l) { return l.trim().length; });
-    var rows = lines.slice(1); // drop the "Location,color" header
-    var locs = [];
-    rows.forEach(function (line) {
-      var parts = line.split(',');
-      var name = (parts[0] || '').trim();
-      var color = (parts[1] || '').trim();
-      if (!name) return;
-      if (!/^#[0-9a-fA-F]{3,8}$/.test(color)) color = '#8993FF';
-      locs.push({ id: name, name: name, color: color });
+  function updateEvent(id, data) {
+    return sb.from('events').update(eventPayload(data)).eq('id', id).then(function (res) {
+      if (res.error) throw res.error; return res;
     });
-    return locs.length ? locs : null;
   }
 
-  var locationSyncInFlight = null;
-  function fetchLocationsFromDrive() {
-    if (locationSyncInFlight) return locationSyncInFlight;
-    locationSyncInFlight = (async function () {
-      try {
-        if (!window.claude || typeof window.claude.use !== 'function') return null;
-        var mcp = await window.claude.use('mcp');
-        if (!mcp) return null;
-        var result = await mcp.callTool('Google Drive', 'download_file_content', {
-          fileId: DRIVE_LOCATIONS_FILE_ID,
-          exportMimeType: 'text/csv',
-        });
-        var payload = result && result.payload;
-        var b64 = payload && payload.content;
-        if (!b64) return null;
-        return parseLocationsCsv(b64ToUtf8(b64));
-      } catch (e) {
-        return null;
-      } finally {
-        locationSyncInFlight = null;
-      }
-    })();
-    return locationSyncInFlight;
-  }
-
-  function refreshLocationsForForm() {
-    var statusEl = document.getElementById('locationSyncStatus');
-    if (statusEl) { statusEl.textContent = 'מסנכרן מהגיליון…'; statusEl.hidden = false; }
-    fetchLocationsFromDrive().then(function (fresh) {
-      if (fresh && fresh.length) {
-        var currentSel = document.getElementById('evtLocation').value;
-        LOCATIONS = fresh;
-        populateLocationSelect();
-        var sel = document.getElementById('evtLocation');
-        sel.value = LOCATIONS.some(function (l) { return l.id === currentSel; }) ? currentSel : LOCATIONS[0].id;
-        updateSwatch();
-        if (statusEl) { statusEl.textContent = 'עודכן מהגיליון ✓'; setTimeout(function () { statusEl.hidden = true; }, 2000); }
-      } else if (statusEl) {
-        statusEl.hidden = true;
-      }
+  function removeEvent(id) {
+    return sb.from('events').delete().eq('id', id).then(function (res) {
+      if (res.error) throw res.error; return res;
     });
   }
 
@@ -1002,7 +862,6 @@
     document.getElementById('timeError').hidden = true;
     formBackdrop.hidden = false;
     setTimeout(function () { document.getElementById('evtTitle').focus(); }, 0);
-    refreshLocationsForForm();
   }
 
   function openEditModal(ev) {
@@ -1021,7 +880,6 @@
     closeViewModal();
     formBackdrop.hidden = false;
     setTimeout(function () { document.getElementById('evtTitle').focus(); }, 0);
-    refreshLocationsForForm();
   }
 
   function addOneHour(hhmm) {
@@ -1053,16 +911,15 @@
     };
 
     var isEdit = !!state.editingId;
-    var id = isEdit ? state.editingId : ('e' + Date.now());
     var submitBtn = document.getElementById('formSubmitBtn');
     submitBtn.disabled = true;
 
-    (isEdit ? updateEventRow(id, data) : appendEventRow(id, data)).then(function () {
+    (isEdit ? updateEvent(state.editingId, data) : insertEvent(data)).then(function () {
       showToast(isEdit ? 'האירוע עודכן.' : 'האירוע נוסף.');
       closeFormModal();
-      return loadEventsFromSheet();
+      return loadEvents();
     }).catch(function (err) {
-      handleSheetsWriteError(err);
+      handleWriteError(err);
     }).then(function () {
       submitBtn.disabled = false;
     });
@@ -1123,12 +980,12 @@
 
   function deleteEvent(id) {
     if (!isEditor()) { showToast('כדי למחוק אירועים יש להתחבר עם Google.'); return; }
-    clearEventRow(id).then(function () {
+    removeEvent(id).then(function () {
       closeViewModal();
       showToast('האירוע נמחק.');
-      return loadEventsFromSheet();
+      return loadEvents();
     }).catch(function (err) {
-      handleSheetsWriteError(err);
+      handleWriteError(err);
     });
   }
 
@@ -1207,13 +1064,23 @@
   /* ---------------- INIT ---------------- */
 
   // Show something immediately, then replace it with the real shared
-  // data as soon as the sheet responds.
+  // data as soon as Supabase responds.
   state.events = seedEvents();
   setView('month');
-  initGoogleAuthWhenReady(25); // ~5s of polling before giving up
-  loadEventsFromSheet();
+  loadEvents();
   // Keep the calendar in sync with what other people add/edit/delete.
-  setInterval(loadEventsFromSheet, 30000);
+  setInterval(loadEvents, 30000);
+
+  // Auth: pick up an existing session, and react to the sign-in redirect
+  // completing, the hourly token refresh, and sign-out (here or in
+  // another tab).
+  sb.auth.getSession().then(function (res) {
+    if (res.data && res.data.session) applySession(res.data.session, false);
+  });
+  sb.auth.onAuthStateChange(function (event, session) {
+    if (session) applySession(session, event === 'SIGNED_IN');
+    else clearSession();
+  });
 })();
 </script>
 
