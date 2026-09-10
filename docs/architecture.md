@@ -19,7 +19,10 @@ var sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 ```
 
 `LOCATIONS` is a small hardcoded array (`{ id, name, color }`) — the location name
-is its own id. Edit the array to add/rename/recolour a location.
+is its own id. Edit the array to add/rename/recolour a location. The special
+`אחר` entry makes the event form reveal a free-text field (`#evtLocationOther`);
+an event saved that way stores the typed string as its `location` and renders
+with `אחר`'s colour (`locationById()` synthesises an entry for any unknown id).
 
 ## Auth (Supabase Auth + Google provider)
 

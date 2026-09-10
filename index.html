@@ -311,6 +311,7 @@
             <span id="locationSwatch" class="w-3.5 h-3.5 rounded-full shrink-0" aria-hidden="true"></span>
             <select id="evtLocation" required class="field-input rounded-md px-3 py-2 text-sm font-body flex-1"></select>
           </div>
+          <input id="evtLocationOther" type="text" maxlength="80" hidden placeholder="שם המיקום" class="field-input rounded-md px-3 py-2 text-sm font-body">
           <p class="text-[11px] font-body text-ink2">צבע האירוע נקבע אוטומטית לפי המיקום.</p>
         </div>
 
@@ -387,6 +388,10 @@
     { id: 'בית אופיר', name: 'בית אופיר', color: '#ff0000' },
     { id: 'חורשת נועם', name: 'חורשת נועם', color: '#00ffff' },
     { id: 'מגרש', name: 'מגרש', color: '#ec34dd' },
+    // "אחר" (Other): picking it in the form reveals a free-text field so
+    // an editor can type a one-off location. Such an event's `location`
+    // is the typed string; it renders with this colour and its own name.
+    { id: 'אחר', name: 'אחר', color: '#94a3b8' },
   ];
 
   // Supabase-backed shared calendar. Events live in the "events" table of
@@ -437,7 +442,12 @@
 
   function locationById(id) {
     for (var i = 0; i < LOCATIONS.length; i++) if (LOCATIONS[i].id === id) return LOCATIONS[i];
-    return LOCATIONS[0];
+    if (!id) return LOCATIONS[0];
+    // Unknown id => a free-text location typed via "אחר": keep the typed
+    // name, borrow אחר's colour (fall back to the first colour if אחר was removed).
+    var other = null;
+    for (var j = 0; j < LOCATIONS.length; j++) if (LOCATIONS[j].id === 'אחר') { other = LOCATIONS[j]; break; }
+    return { id: id, name: id, color: other ? other.color : LOCATIONS[0].color };
   }
   // Optimistic UI gate: a signed-in user sees the add/edit/delete
   // controls. The real gate is the write itself, which fails with a
@@ -847,6 +857,13 @@
     var sel = document.getElementById('evtLocation');
     var loc = locationById(sel.value);
     document.getElementById('locationSwatch').style.background = loc.color;
+    // Show the free-text field only for "אחר", and only make it required
+    // while it's visible (a hidden required field blocks form submit).
+    var other = document.getElementById('evtLocationOther');
+    var isOther = sel.value === 'אחר';
+    other.hidden = !isOther;
+    other.required = isOther;
+    if (!isOther) other.value = '';
   }
 
   function openAddModal(dateKey, startTime) {
@@ -874,7 +891,9 @@
     document.getElementById('evtDate').value = ev.date;
     document.getElementById('evtStart').value = ev.start;
     document.getElementById('evtEnd').value = ev.end;
-    document.getElementById('evtLocation').value = ev.location;
+    var knownLoc = LOCATIONS.some(function (l) { return l.id === ev.location; });
+    document.getElementById('evtLocation').value = knownLoc ? ev.location : 'אחר';
+    document.getElementById('evtLocationOther').value = knownLoc ? '' : (ev.location || '');
     document.getElementById('evtDescription').value = ev.description || '';
     updateSwatch();
     document.getElementById('timeError').hidden = true;
@@ -902,12 +921,19 @@
     }
     document.getElementById('timeError').hidden = true;
 
+    var locSel = document.getElementById('evtLocation').value;
+    var locOther = document.getElementById('evtLocationOther').value.trim();
+    if (locSel === 'אחר' && !locOther) {
+      document.getElementById('evtLocationOther').focus();
+      return;
+    }
+
     var data = {
       title: document.getElementById('evtTitle').value.trim() || 'אירוע ללא כותרת',
       date: document.getElementById('evtDate').value,
       start: start,
       end: end,
-      location: document.getElementById('evtLocation').value,
+      location: locSel === 'אחר' ? locOther : locSel,
       description: document.getElementById('evtDescription').value.trim(),
     };
 
@@ -928,7 +954,12 @@
 
   document.getElementById('formCloseBtn').addEventListener('click', closeFormModal);
   document.getElementById('formCancelBtn').addEventListener('click', closeFormModal);
-  document.getElementById('evtLocation').addEventListener('change', updateSwatch);
+  document.getElementById('evtLocation').addEventListener('change', function () {
+    updateSwatch();
+    if (document.getElementById('evtLocation').value === 'אחר') {
+      document.getElementById('evtLocationOther').focus();
+    }
+  });
   formBackdrop.addEventListener('click', function (e) { if (e.target === formBackdrop) closeFormModal(); });
 
   /* ---------------- VIEW MODAL ---------------- */
