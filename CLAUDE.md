@@ -77,8 +77,8 @@ create table events (
   id          uuid primary key default gen_random_uuid(),
   title       text not null,
   date        date not null,
-  start_time  time not null,     -- "end" is a reserved word, so *_time for both
-  end_time    time not null,
+  start_time  time,              -- NULL start/end => an all-day event ("end" is a
+  end_time    time,              -- reserved word, hence *_time for both)
   location    text not null,
   description text default '',
   updated_at  timestamptz not null default now(),
@@ -102,7 +102,10 @@ create policy "editors delete" on events for delete to authenticated using (publ
 
 The app maps DB columns `start_time`/`end_time` back to `start`/`end` via a
 PostgREST select alias (`start:start_time,end:end_time`) and trims the `HH:MM:SS`
-that Postgres `time` returns down to `HH:MM` in `rowToEvent()`.
+that Postgres `time` returns down to `HH:MM` in `rowToEvent()`. An event with no
+`start` is **all-day**: month view drops the time prefix, week/day view lists it
+in a "כל היום" band above the hour grid, and the event form has an
+"אירוע ללא שעה" checkbox.
 
 ## Config constants (in `index.html`)
 

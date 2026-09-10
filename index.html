@@ -293,14 +293,18 @@
           <input id="evtDate" type="date" required class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
         </div>
 
-        <div class="grid grid-cols-2 gap-3">
+        <label class="flex items-center gap-2 text-xs font-semibold font-display text-ink2 select-none cursor-pointer">
+          <input id="evtAllDay" type="checkbox" class="accent-[color:var(--accent)]">
+          אירוע ללא שעה (כל היום)
+        </label>
+        <div id="timeFields" class="grid grid-cols-2 gap-3">
           <div class="flex flex-col gap-1">
             <label for="evtStart" class="text-xs font-semibold font-display text-ink2">שעת התחלה</label>
-            <input id="evtStart" type="time" required class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
+            <input id="evtStart" type="time" class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
           </div>
           <div class="flex flex-col gap-1">
             <label for="evtEnd" class="text-xs font-semibold font-display text-ink2">שעת סיום</label>
-            <input id="evtEnd" type="time" required class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
+            <input id="evtEnd" type="time" class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
           </div>
         </div>
         <p id="timeError" hidden class="text-xs font-body text-[var(--danger)] -mt-2">שעת הסיום חייבת להיות אחרי שעת ההתחלה.</p>
@@ -388,6 +392,9 @@
     { id: 'בית אופיר', name: 'בית אופיר', color: '#ff0000' },
     { id: 'חורשת נועם', name: 'חורשת נועם', color: '#00ffff' },
     { id: 'מגרש', name: 'מגרש', color: '#ec34dd' },
+    { id: 'דשא מרכזי', name: 'דשא מרכזי', color: '#22c55e' },
+    { id: 'מועדון', name: 'מועדון', color: '#f97316' },
+    { id: 'בית כנסת', name: 'בית כנסת', color: '#3b82f6' },
     // "אחר" (Other): picking it in the form reveals a free-text field so
     // an editor can type a one-off location. Such an event's `location`
     // is the typed string; it renders with this colour and its own name.
@@ -568,8 +575,8 @@
     return {
       title: data.title,
       date: data.date,
-      start_time: data.start,
-      end_time: data.end,
+      start_time: data.start || null,   // "" => all-day => NULL in the DB
+      end_time: data.end || null,
       location: data.location,
       description: data.description,
       updated_at: new Date().toISOString(),
@@ -610,10 +617,14 @@
   function addDays(d, n) { var r = new Date(d); r.setDate(r.getDate() + n); return r; }
   function startOfWeek(d) { var r = new Date(d); r.setDate(r.getDate() - r.getDay()); r.setHours(0,0,0,0); return r; }
   function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
-  function minutesOf(hhmm) { var p = hhmm.split(':'); return (+p[0]) * 60 + (+p[1]); }
+  // "" / null start => an all-day event. minutesOf returns -1 for it so it
+  // sorts before every timed event and is easy to test for.
+  function minutesOf(hhmm) { if (!hhmm) return -1; var p = hhmm.split(':'); return (+p[0]) * 60 + (+p[1]); }
   function formatHour(h) { return h === 0 ? '' : pad(h) + ':00'; }
   function formatClock(hhmm) { return hhmm; }
   function formatTimeRange(start, end) {
+    if (!start) return 'כל היום';
+    if (!end) return LRI + formatClock(start) + PDI;
     return LRI + formatClock(start) + '–' + formatClock(end) + PDI;
   }
 
@@ -694,8 +705,9 @@
       html += '<div class="flex flex-col gap-1 min-w-0">';
       visible.forEach(function (ev) {
         var loc = locationById(ev.location);
+        var timeLabel = ev.start ? '<span class="font-mono tabular">' + formatClock(ev.start) + '</span> ' : '';
         html += '<button data-view-event="' + ev.id + '" class="chip text-start text-[11px] font-body font-medium leading-tight px-1.5 py-1 rounded truncate" style="--loc:' + loc.color + '" title="' + escapeAttr(ev.title) + '">' +
-          '<span class="font-mono tabular">' + formatClock(ev.start) + '</span> ' + escapeHtml(ev.title) + '</button>';
+          timeLabel + escapeHtml(ev.title) + '</button>';
       });
       if (extra > 0) {
         html += '<button data-goto-day="' + key + '" class="text-start text-[11px] font-display font-semibold text-ink2 hover:text-accent px-1.5">עוד ' + extra + '</button>';
@@ -715,8 +727,10 @@
 
     var html = '<div class="min-w-[' + (cols === 1 ? 320 : 640) + 'px]">';
 
-    // Day headers
-    html += '<div class="grid sticky top-0 z-10 bg-surface border-b-2 border-black" style="grid-template-columns: 56px repeat(' + cols + ', 1fr);">';
+    // Sticky top: day headers + (if any) an all-day band, both pinned.
+    html += '<div class="sticky top-0 z-10 bg-surface">';
+
+    html += '<div class="grid border-b-2 border-black" style="grid-template-columns: 56px repeat(' + cols + ', 1fr);">';
     html += '<div></div>';
     days.forEach(function (d) {
       var today = sameDay(d, TODAY);
@@ -726,6 +740,26 @@
         '</div>';
     });
     html += '</div>';
+
+    var anyAllDay = days.some(function (d) {
+      return eventsOn(toKey(d)).some(function (e) { return !e.start; });
+    });
+    if (anyAllDay) {
+      html += '<div class="grid border-b-2 border-black" style="grid-template-columns: 56px repeat(' + cols + ', 1fr);">';
+      html += '<div class="pl-2 py-1 text-left text-[10px] font-display font-semibold text-ink2">כל היום</div>';
+      days.forEach(function (d) {
+        var ad = eventsOn(toKey(d)).filter(function (e) { return !e.start; });
+        html += '<div class="border-s-2 border-black p-1 flex flex-col gap-1 min-w-0">';
+        ad.forEach(function (ev) {
+          var loc = locationById(ev.location);
+          html += '<button data-view-event="' + ev.id + '" class="chip block w-full text-start text-[11px] font-body font-medium leading-tight px-1.5 py-1 rounded truncate" style="--loc:' + loc.color + '" title="' + escapeAttr(ev.title) + '">' + escapeHtml(ev.title) + '</button>';
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    html += '</div>'; // end sticky top
 
     // Body: hour gutter + day columns
     html += '<div class="grid relative" style="grid-template-columns: 56px repeat(' + cols + ', 1fr);">';
@@ -739,7 +773,8 @@
     days.forEach(function (d) {
       var key = toKey(d);
       var dayEvents = eventsOn(key);
-      var placed = layoutDayEvents(dayEvents);
+      // All-day events live in the band above; only timed events get placed on the hour grid.
+      var placed = layoutDayEvents(dayEvents.filter(function (e) { return !!e.start; }));
       var today = sameDay(d, TODAY);
 
       html += '<div class="grid-col relative" data-day-col="' + key + '">';
@@ -866,6 +901,17 @@
     if (!isOther) other.value = '';
   }
 
+  // "כל היום" checkbox — hides + clears the time inputs when on.
+  function updateAllDayToggle() {
+    var on = document.getElementById('evtAllDay').checked;
+    document.getElementById('timeFields').hidden = on;
+    if (on) {
+      document.getElementById('evtStart').value = '';
+      document.getElementById('evtEnd').value = '';
+      document.getElementById('timeError').hidden = true;
+    }
+  }
+
   function openAddModal(dateKey, startTime) {
     if (!isEditor()) { showToast('רק עורכים מורשים יכולים להוסיף אירועים.'); return; }
     state.editingId = null;
@@ -873,10 +919,12 @@
     document.getElementById('formSubmitBtn').textContent = 'הוספת אירוע';
     eventForm.reset();
     document.getElementById('evtDate').value = dateKey;
+    document.getElementById('evtAllDay').checked = false;
     document.getElementById('evtStart').value = startTime || '09:00';
     document.getElementById('evtEnd').value = addOneHour(startTime || '09:00');
     populateLocationSelect();
     updateSwatch();
+    updateAllDayToggle();
     document.getElementById('timeError').hidden = true;
     formBackdrop.hidden = false;
     setTimeout(function () { document.getElementById('evtTitle').focus(); }, 0);
@@ -889,8 +937,10 @@
     populateLocationSelect();
     document.getElementById('evtTitle').value = ev.title;
     document.getElementById('evtDate').value = ev.date;
-    document.getElementById('evtStart').value = ev.start;
-    document.getElementById('evtEnd').value = ev.end;
+    document.getElementById('evtAllDay').checked = !ev.start;
+    document.getElementById('evtStart').value = ev.start || '';
+    document.getElementById('evtEnd').value = ev.end || '';
+    updateAllDayToggle();
     var knownLoc = LOCATIONS.some(function (l) { return l.id === ev.location; });
     document.getElementById('evtLocation').value = knownLoc ? ev.location : 'אחר';
     document.getElementById('evtLocationOther').value = knownLoc ? '' : (ev.location || '');
@@ -913,13 +963,23 @@
     e.preventDefault();
     if (!isEditor()) { showToast('כדי לשמור אירועים יש להתחבר עם Google.'); return; }
 
-    var start = document.getElementById('evtStart').value;
-    var end = document.getElementById('evtEnd').value;
-    if (minutesOf(end) <= minutesOf(start)) {
-      document.getElementById('timeError').hidden = false;
-      return;
+    var allDay = document.getElementById('evtAllDay').checked;
+    var start = allDay ? '' : document.getElementById('evtStart').value;
+    var end = allDay ? '' : document.getElementById('evtEnd').value;
+    var timeErr = document.getElementById('timeError');
+    if (!allDay) {
+      if (!start || !end) {
+        timeErr.textContent = 'יש למלא שעת התחלה וסיום, או לסמן "אירוע ללא שעה".';
+        timeErr.hidden = false;
+        return;
+      }
+      if (minutesOf(end) <= minutesOf(start)) {
+        timeErr.textContent = 'שעת הסיום חייבת להיות אחרי שעת ההתחלה.';
+        timeErr.hidden = false;
+        return;
+      }
     }
-    document.getElementById('timeError').hidden = true;
+    timeErr.hidden = true;
 
     var locSel = document.getElementById('evtLocation').value;
     var locOther = document.getElementById('evtLocationOther').value.trim();
@@ -954,6 +1014,7 @@
 
   document.getElementById('formCloseBtn').addEventListener('click', closeFormModal);
   document.getElementById('formCancelBtn').addEventListener('click', closeFormModal);
+  document.getElementById('evtAllDay').addEventListener('change', updateAllDayToggle);
   document.getElementById('evtLocation').addEventListener('change', function () {
     updateSwatch();
     if (document.getElementById('evtLocation').value === 'אחר') {
