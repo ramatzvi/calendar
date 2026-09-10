@@ -463,6 +463,15 @@
 
   /* ---------------- GOOGLE SIGN-IN ---------------- */
 
+  // The GIS script tag is async, so it can finish loading well after this
+  // inline script has already run — poll briefly instead of assuming it's
+  // ready immediately.
+  function initGoogleAuthWhenReady(attemptsLeft) {
+    if (window.google && google.accounts && google.accounts.oauth2) { initGoogleAuth(); return; }
+    if (attemptsLeft <= 0) { initGoogleAuth(); return; } // will report the failure state
+    setTimeout(function () { initGoogleAuthWhenReady(attemptsLeft - 1); }, 200);
+  }
+
   function initGoogleAuth() {
     if (!window.google || !google.accounts || !google.accounts.oauth2) {
       // Google Identity Services failed to load (offline, blocked, etc).
@@ -1197,7 +1206,7 @@
   // data as soon as the sheet responds.
   state.events = seedEvents();
   setView('month');
-  initGoogleAuth();
+  initGoogleAuthWhenReady(25); // ~5s of polling before giving up
   loadEventsFromSheet();
   // Keep the calendar in sync with what other people add/edit/delete.
   setInterval(loadEventsFromSheet, 30000);
