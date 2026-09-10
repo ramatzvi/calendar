@@ -482,7 +482,11 @@
     }
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
-      scope: 'openid email profile https://www.googleapis.com/auth/spreadsheets',
+      // NOTE: deliberately no "openid" scope here — Google's token-client
+      // (implicit) flow rejects it with "Error 400: invalid_request /
+      // doesn't comply with Google's OAuth 2.0 policy". Plain "email" +
+      // "profile" are enough for the userinfo call below.
+      scope: 'email profile https://www.googleapis.com/auth/spreadsheets',
       callback: function (resp) {
         if (!resp || resp.error) {
           showToast('ההתחברות עם Google נכשלה.');
