@@ -1,0 +1,5 @@
+# local scratch — not part of the site
+events_import.csv
+*.local
+.DS_Store
+Thumbs.db
