@@ -259,6 +259,7 @@
       <div id="authSignedIn" hidden class="flex items-center gap-2">
         <img id="authAvatar" class="w-6 h-6 rounded-full" alt="">
         <span id="authName" class="hidden sm:inline text-xs font-body text-ink2"></span>
+        <span id="authViewOnly" hidden class="text-[11px] font-body text-ink2 border border-edge rounded px-1.5 py-0.5">צפייה בלבד</span>
         <button id="signOutBtn" type="button" class="text-xs font-body text-ink2 hover:text-accent underline underline-offset-2 decoration-dotted">התנתקות</button>
       </div>
     </div>
@@ -442,10 +443,12 @@
     editingId: null,
   };
 
-  // Google auth state, mirrored from the Supabase session. Its mere
-  // presence (signedIn) is what lets the app ATTEMPT a write; the
-  // "editors" RLS policy is what actually decides whether it succeeds.
-  var authState = { signedIn: false, email: null, name: null, picture: null };
+  // Google auth state, mirrored from the Supabase session. `canEdit` is
+  // filled in after sign-in by a probe of the "editors" table (see
+  // refreshCanEdit); until it resolves it stays false, so the edit
+  // controls only appear once membership is confirmed. The RLS policy is
+  // still the real gate — this just keeps the UI honest.
+  var authState = { signedIn: false, email: null, name: null, picture: null, canEdit: false };
 
   function locationById(id) {
     for (var i = 0; i < LOCATIONS.length; i++) if (LOCATIONS[i].id === id) return LOCATIONS[i];
@@ -456,11 +459,10 @@
     for (var j = 0; j < LOCATIONS.length; j++) if (LOCATIONS[j].id === 'אחר') { other = LOCATIONS[j]; break; }
     return { id: id, name: id, color: other ? other.color : LOCATIONS[0].color };
   }
-  // Optimistic UI gate: a signed-in user sees the add/edit/delete
-  // controls. The real gate is the write itself, which fails with a
-  // permission error for anyone not in the "editors" table — see
-  // handleWriteError.
-  function isEditor() { return !!authState.signedIn; }
+  // UI gate for the add/edit/delete controls: signed in AND confirmed to
+  // be in the "editors" table. The RLS policy on the events table is the
+  // real enforcement — see handleWriteError.
+  function isEditor() { return !!(authState.signedIn && authState.canEdit); }
 
   /* ---------------- GOOGLE SIGN-IN (via Supabase Auth) ---------------- */
 
@@ -475,13 +477,31 @@
     var meta = u.user_metadata || {};
     authState.name = meta.full_name || meta.name || u.email || '';
     authState.picture = meta.avatar_url || meta.picture || '';
+    authState.canEdit = false;
     renderAuthUI();
     renderAll();
-    if (announce) showToast('מחובר/ת בתור ' + authState.name + '. ניתן להוסיף, לערוך ולמחוק אירועים.');
+    refreshCanEdit(announce);
+  }
+
+  // Probe the "editors" table for the signed-in user's own row. A SELECT
+  // policy on that table lets an authenticated user see only their own
+  // row, so a non-empty result means "you are an editor". Falls safely to
+  // view-only if the probe errors.
+  function refreshCanEdit(announce) {
+    sb.from('editors').select('email').then(function (res) {
+      authState.canEdit = !res.error && !!res.data && res.data.length > 0;
+      renderAuthUI();
+      renderAll();
+      if (announce) {
+        showToast(authState.canEdit
+          ? 'מחובר/ת בתור ' + authState.name + '. ניתן להוסיף, לערוך ולמחוק אירועים.'
+          : 'מחובר/ת בתור ' + authState.name + ' — צפייה בלבד. לעריכה יש לבקש הרשאה מבעל/ת הלוח.');
+      }
+    });
   }
 
   function clearSession() {
-    authState = { signedIn: false, email: null, name: null, picture: null };
+    authState = { signedIn: false, email: null, name: null, picture: null, canEdit: false };
     renderAuthUI();
     renderAll();
   }
@@ -510,6 +530,7 @@
       inEl.hidden = false;
       document.getElementById('authAvatar').src = authState.picture || '';
       document.getElementById('authName').textContent = authState.name || '';
+      document.getElementById('authViewOnly').hidden = !!authState.canEdit;
     } else {
       outEl.hidden = false;
       inEl.hidden = true;

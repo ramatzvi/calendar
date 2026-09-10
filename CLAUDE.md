@@ -87,7 +87,11 @@ create table events (
 alter table events enable row level security;
 
 create table editors ( email text primary key );
-alter table editors enable row level security;   -- no policy => only dashboard/service role
+alter table editors enable row level security;
+-- an authenticated user may read ONLY their own editors row; the app uses
+-- this to show "view only" vs edit controls up front (refreshCanEdit()).
+create policy "read own editor row" on editors for select to authenticated
+  using (email = (auth.jwt() ->> 'email'));
 
 create function public.is_editor() returns boolean
   language sql security definer stable
@@ -99,6 +103,9 @@ create policy "editors insert" on events for insert to authenticated with check 
 create policy "editors update" on events for update to authenticated using (public.is_editor()) with check (public.is_editor());
 create policy "editors delete" on events for delete to authenticated using (public.is_editor());
 ```
+
+The `editors` email must match the signed-in user's Google address **exactly**
+(lower-case, no whitespace) — that string is what `auth.jwt() ->> 'email'` returns.
 
 The app maps DB columns `start_time`/`end_time` back to `start`/`end` via a
 PostgREST select alias (`start:start_time,end:end_time`) and trims the `HH:MM:SS`
@@ -178,6 +185,8 @@ just-deployed fix — append `?nocache=123` when re-checking.
 5. **`public.is_editor()` is `security definer` with `set search_path = ''`** so it
    can read the `editors` table past that table's RLS while staying safe. If you
    recreate it, keep both of those.
-6. `isEditor()` in `index.html` is intentionally an *optimistic* client-side check
-   (just `authState.signedIn`) — don't "fix" it into something stricter; the real
-   check is the RLS write policy.
+6. `isEditor()` in `index.html` = `authState.signedIn && authState.canEdit`.
+   `canEdit` is set by `refreshCanEdit()` after sign-in, which reads the caller's
+   own `editors` row (allowed by the "read own editor row" policy). It's a UI
+   convenience so non-editors see "צפייה בלבד" immediately; the RLS write policies
+   on `events` are still the real enforcement.
