@@ -139,13 +139,28 @@ single-row flow as before). The chosen scope drives:
   AND date >= <the date this event had when the modal opened>`).
 - **all** → `updateSeriesAll`/`removeSeriesAll` (`WHERE series_id = X`).
 
-For a bulk edit, `#evtDate` is disabled (each occurrence keeps its own date —
-`seriesEditPayload` strips `date`, and also `series_id`, from the UPDATE) and
-`#dateBulkHint` explains why. Bulk edits skip `findConflict` — checking one
-edit against a whole series' worth of rows is a fuzzier problem than the
-single-event case, so it's out of scope. `editPayload` (single-row update)
-also strips `series_id`, so editing "just this event" never severs it from
-its series by accident.
+`#evtDate` stays editable for a bulk edit too, but changing it **shifts**
+every affected occurrence by the same number of days rather than collapsing
+them onto one date (`#dateBulkHint` explains this). The submit handler
+computes `deltaDays` from `data.date` vs. `state.editOriginalDate`
+(the event's date when the modal opened); if it's non-zero, `shiftSeriesDates`
+runs instead of the plain `updateSeriesFrom`/`updateSeriesAll`:
+it re-fetches the affected rows' own dates, adds `deltaDays` to each, and
+writes them all back with **one `.upsert()`** (not `.update()` — Supabase's
+`update()` can only set every matched row to the *same* literal value, so a
+per-row "add N days to your own date" needs `upsert`'s per-row payload
+instead; RLS applies exactly as it would to a normal insert/update, no
+special-casing needed). `seriesEditPayload` still strips `date` from the
+non-shift path, and also `series_id` — so a bulk field-only edit never
+touches either. `editPayload` (single-row update) also strips `series_id`,
+so editing "just this event" never severs it from its series by accident.
+Bulk edits (shifted or not) skip `findConflict` — checking one edit against
+a whole series' worth of rows is a fuzzier problem than the single-event case,
+so it's out of scope.
+
+Adding a recurring event: `#evtRecurUntil` defaults to (and its `min` is
+floored at) the event's own date, so the picker opens on the relevant month
+instead of today; both stay in sync if `#evtDate` is changed afterward.
 
 ## Data layer (Supabase `events` table)
 

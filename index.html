@@ -316,7 +316,7 @@
         <div class="flex flex-col gap-1">
           <label for="evtDate" class="text-xs font-semibold font-display text-ink2">תאריך</label>
           <input id="evtDate" type="date" required class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
-          <p id="dateBulkHint" hidden class="text-[11px] font-body text-ink2">בעריכת סדרה שלמה, לכל אירוע נשאר התאריך שלו.</p>
+          <p id="dateBulkHint" hidden class="text-[11px] font-body text-ink2">שינוי התאריך יזיז את כל האירועים הנבחרים באותו מספר ימים (התאריכים היחסיים ביניהם נשמרים).</p>
         </div>
 
         <label class="flex items-center gap-2 text-xs font-semibold font-display text-ink2 select-none cursor-pointer">
@@ -716,6 +716,36 @@
   function updateSeriesAll(seriesId, data) {
     return sb.from('events').update(seriesEditPayload(data)).eq('series_id', seriesId).then(function (res) {
       if (res.error) throw res.error; return res;
+    });
+  }
+
+  // Bulk "move this and following / all" when the date field was changed:
+  // every affected row keeps its own date *offset* — shift each by the same
+  // number of days rather than collapsing them all onto one date. A plain
+  // `.update({date: x})` can't express "add N days to each row's own date"
+  // (Supabase only takes literal values, not a SQL expression), so this
+  // reads the affected rows' current dates first, then `.upsert()`s them
+  // back with per-row shifted dates in one request (upsert lets each row
+  // carry its own value, unlike `.update()`). RLS still applies: this is an
+  // ordinary insert/update as far as Postgres is concerned, gated by the
+  // same editor-only policies as everything else.
+  function shiftSeriesDates(seriesId, fromDate, deltaDays, data) {
+    var q = sb.from('events').select('id,date').eq('series_id', seriesId);
+    if (fromDate) q = q.gte('date', fromDate);
+    return q.then(function (res) {
+      if (res.error) throw res.error;
+      var rows = res.data || [];
+      if (!rows.length) return res;
+      var base = seriesEditPayload(data);
+      var upsertRows = rows.map(function (row) {
+        var full = {}; for (var k in base) full[k] = base[k];
+        full.id = row.id;
+        full.date = toKey(addDays(parseDateKey(row.date), deltaDays));
+        return full;
+      });
+      return sb.from('events').upsert(upsertRows, { onConflict: 'id' }).then(function (res2) {
+        if (res2.error) throw res2.error; return res2;
+      });
     });
   }
 
@@ -1135,7 +1165,10 @@
     document.getElementById('evtEnd').value = addOneHour(startTime || '09:00');
     document.getElementById('recurringSection').hidden = false;
     document.getElementById('evtRecurring').checked = false;
-    document.getElementById('evtRecurUntil').value = '';
+    // Default (and floor) the "until" date to the event's own date, so the
+    // picker opens on the right day instead of on today.
+    document.getElementById('evtRecurUntil').value = dateKey;
+    document.getElementById('evtRecurUntil').min = dateKey;
     populateLocationSelect();
     updateSwatch();
     updateAllDayToggle();
@@ -1158,7 +1191,10 @@
     populateLocationSelect();
     document.getElementById('evtTitle').value = ev.title;
     document.getElementById('evtDate').value = ev.date;
-    document.getElementById('evtDate').disabled = state.editScope !== 'this';
+    document.getElementById('evtDate').disabled = false;
+    // For a bulk scope, changing the date shifts every affected occurrence
+    // by the same number of days (see shiftSeriesDates) rather than moving
+    // them all to one date — the hint explains that.
     document.getElementById('dateBulkHint').hidden = state.editScope === 'this';
     document.getElementById('evtAllDay').checked = !ev.start;
     document.getElementById('evtStart').value = ev.start || '';
@@ -1279,14 +1315,20 @@
     }
 
     // Editing a series member with scope "following"/"all": one bulk
-    // UPDATE across the matching rows, date left untouched, no conflict
-    // check (checking a whole bulk edit against everything else is a much
-    // fuzzier problem than the single-event case below).
+    // operation across the matching rows, no conflict check (checking a
+    // whole bulk edit against everything else is a much fuzzier problem
+    // than the single-event case below). If the date field was changed,
+    // every matching row shifts by the same number of days instead of all
+    // collapsing onto one date.
     if (isEdit && state.editScope && state.editScope !== 'this') {
+      var deltaDays = Math.round((parseDateKey(data.date) - parseDateKey(state.editOriginalDate)) / 86400000);
+      var fromDate = state.editScope === 'all' ? null : state.editOriginalDate;
       submitBtn.disabled = true;
-      var bulkOp = state.editScope === 'all'
-        ? updateSeriesAll(state.editSeriesId, data)
-        : updateSeriesFrom(state.editSeriesId, state.editOriginalDate, data);
+      var bulkOp = deltaDays !== 0
+        ? shiftSeriesDates(state.editSeriesId, fromDate, deltaDays, data)
+        : (state.editScope === 'all'
+            ? updateSeriesAll(state.editSeriesId, data)
+            : updateSeriesFrom(state.editSeriesId, state.editOriginalDate, data));
       bulkOp.then(function () {
         showToast('האירועים בסדרה עודכנו.');
         closeFormModal();
@@ -1321,6 +1363,14 @@
   document.getElementById('formCancelBtn').addEventListener('click', closeFormModal);
   document.getElementById('evtAllDay').addEventListener('change', updateAllDayToggle);
   document.getElementById('evtRecurring').addEventListener('change', updateRecurringToggle);
+  // Keep the recurrence "until" picker's floor (and default) in sync if the
+  // event's own date is changed after the modal opened.
+  document.getElementById('evtDate').addEventListener('change', function () {
+    var startVal = this.value;
+    var untilInput = document.getElementById('evtRecurUntil');
+    untilInput.min = startVal;
+    if (untilInput.value && untilInput.value < startVal) untilInput.value = startVal;
+  });
   document.getElementById('evtLocation').addEventListener('change', function () {
     updateSwatch();
     if (document.getElementById('evtLocation').value === 'אחר') {
