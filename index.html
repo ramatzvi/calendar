@@ -316,6 +316,7 @@
         <div class="flex flex-col gap-1">
           <label for="evtDate" class="text-xs font-semibold font-display text-ink2">תאריך</label>
           <input id="evtDate" type="date" required class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
+          <p id="dateBulkHint" hidden class="text-[11px] font-body text-ink2">בעריכת סדרה שלמה, לכל אירוע נשאר התאריך שלו.</p>
         </div>
 
         <label class="flex items-center gap-2 text-xs font-semibold font-display text-ink2 select-none cursor-pointer">
@@ -489,6 +490,9 @@
     cursor: new Date(TODAY),
     events: [],
     editingId: null,
+    editScope: null,        // 'this' | 'following' | 'all' — set by openEditModal
+    editSeriesId: null,     // the series being bulk-edited, when scope isn't 'this'
+    editOriginalDate: null, // the edited event's date before any change, for "following"
     selectedDate: null,   // date key clicked in month/week/day view (yellow highlight)
     selectedTime: null,   // hour slot clicked in week/day view, if any
   };
@@ -628,6 +632,7 @@
       end: String(r.end || '').slice(0, 5),
       location: r.location || '',
       description: r.description || '',
+      seriesId: r.series_id || null,
     };
   }
 
@@ -635,7 +640,7 @@
   function loadEvents() {
     setSyncStatus('מסנכרן אירועים…');
     eventsSyncInFlight = sb.from('events')
-      .select('id,title,date,start:start_time,end:end_time,location,description')
+      .select('id,title,date,start:start_time,end:end_time,location,description,series_id')
       .order('date', { ascending: true })
       .order('start_time', { ascending: true })
       .then(function (res) {
@@ -660,6 +665,7 @@
       end_time: data.end || null,
       location: data.location,
       description: data.description,
+      series_id: data.seriesId || null,
       updated_at: new Date().toISOString(),
     };
   }
@@ -678,14 +684,55 @@
     });
   }
 
+  // A single-row edit never changes series membership or (for a bulk edit)
+  // another occurrence's date — both are left out of the UPDATE payload so
+  // Postgres leaves those columns alone.
+  function editPayload(data) {
+    var p = eventPayload(data);
+    delete p.series_id;
+    return p;
+  }
+
   function updateEvent(id, data) {
-    return sb.from('events').update(eventPayload(data)).eq('id', id).then(function (res) {
+    return sb.from('events').update(editPayload(data)).eq('id', id).then(function (res) {
+      if (res.error) throw res.error; return res;
+    });
+  }
+
+  // Bulk edit: same fields as editPayload, minus `date` (every occurrence
+  // keeps its own date — a bulk edit only changes title/time/location/desc).
+  function seriesEditPayload(data) {
+    var p = editPayload(data);
+    delete p.date;
+    return p;
+  }
+
+  function updateSeriesFrom(seriesId, fromDate, data) {
+    return sb.from('events').update(seriesEditPayload(data)).eq('series_id', seriesId).gte('date', fromDate).then(function (res) {
+      if (res.error) throw res.error; return res;
+    });
+  }
+
+  function updateSeriesAll(seriesId, data) {
+    return sb.from('events').update(seriesEditPayload(data)).eq('series_id', seriesId).then(function (res) {
       if (res.error) throw res.error; return res;
     });
   }
 
   function removeEvent(id) {
     return sb.from('events').delete().eq('id', id).then(function (res) {
+      if (res.error) throw res.error; return res;
+    });
+  }
+
+  function removeSeriesFrom(seriesId, fromDate) {
+    return sb.from('events').delete().eq('series_id', seriesId).gte('date', fromDate).then(function (res) {
+      if (res.error) throw res.error; return res;
+    });
+  }
+
+  function removeSeriesAll(seriesId) {
+    return sb.from('events').delete().eq('series_id', seriesId).then(function (res) {
       if (res.error) throw res.error; return res;
     });
   }
@@ -1074,9 +1121,14 @@
   function openAddModal(dateKey, startTime) {
     if (!isEditor()) { showToast('רק עורכים מורשים יכולים להוסיף אירועים.'); return; }
     state.editingId = null;
+    state.editScope = null;
+    state.editSeriesId = null;
+    state.editOriginalDate = null;
     document.getElementById('formModalTitle').textContent = 'הוספת אירוע';
     document.getElementById('formSubmitBtn').textContent = 'הוספת אירוע';
     eventForm.reset();
+    document.getElementById('evtDate').disabled = false;
+    document.getElementById('dateBulkHint').hidden = true;
     document.getElementById('evtDate').value = dateKey;
     document.getElementById('evtAllDay').checked = false;
     document.getElementById('evtStart').value = startTime || '09:00';
@@ -1093,13 +1145,21 @@
     setTimeout(function () { document.getElementById('evtTitle').focus(); }, 0);
   }
 
-  function openEditModal(ev) {
+  function openEditModal(ev, scope) {
     state.editingId = ev.id;
+    // "this" (default, and always for a non-series event) edits just this
+    // row; "following"/"all" bulk-update the series (see renderViewFooter's
+    // scope chooser, shown only when ev.seriesId is set).
+    state.editScope = scope || 'this';
+    state.editSeriesId = ev.seriesId || null;
+    state.editOriginalDate = ev.date;
     document.getElementById('formModalTitle').textContent = 'עריכת אירוע';
     document.getElementById('formSubmitBtn').textContent = 'שמירת שינויים';
     populateLocationSelect();
     document.getElementById('evtTitle').value = ev.title;
     document.getElementById('evtDate').value = ev.date;
+    document.getElementById('evtDate').disabled = state.editScope !== 'this';
+    document.getElementById('dateBulkHint').hidden = state.editScope === 'this';
     document.getElementById('evtAllDay').checked = !ev.start;
     document.getElementById('evtStart').value = ev.start || '';
     document.getElementById('evtEnd').value = ev.end || '';
@@ -1200,12 +1260,35 @@
       }
 
       submitBtn.disabled = true;
+      var seriesId = crypto.randomUUID();
       insertEvents(dates.map(function (dk) {
         var occurrence = {}; for (var k in data) occurrence[k] = data[k];
         occurrence.date = dk;
+        occurrence.seriesId = seriesId;
         return occurrence;
       })).then(function () {
         showToast(dates.length + ' מופעים של האירוע נוספו.');
+        closeFormModal();
+        return loadEvents();
+      }).catch(function (err) {
+        handleWriteError(err);
+      }).then(function () {
+        submitBtn.disabled = false;
+      });
+      return;
+    }
+
+    // Editing a series member with scope "following"/"all": one bulk
+    // UPDATE across the matching rows, date left untouched, no conflict
+    // check (checking a whole bulk edit against everything else is a much
+    // fuzzier problem than the single-event case below).
+    if (isEdit && state.editScope && state.editScope !== 'this') {
+      submitBtn.disabled = true;
+      var bulkOp = state.editScope === 'all'
+        ? updateSeriesAll(state.editSeriesId, data)
+        : updateSeriesFrom(state.editSeriesId, state.editOriginalDate, data);
+      bulkOp.then(function () {
+        showToast('האירועים בסדרה עודכנו.');
         closeFormModal();
         return loadEvents();
       }).catch(function (err) {
@@ -1250,9 +1333,17 @@
 
   var viewBackdrop = document.getElementById('viewModalBackdrop');
   var confirmingDeleteId = null;
+  var confirmingEditId = null;
+  // "רק אירוע זה" / "אירוע זה וכל הבאים" / "כל האירועים בסדרה" — shown before
+  // editing or deleting an event that belongs to a series (ev.seriesId set).
+  var SERIES_SCOPE_OPTIONS =
+    '<option value="this">רק אירוע זה</option>' +
+    '<option value="following">אירוע זה וכל הבאים</option>' +
+    '<option value="all">כל האירועים בסדרה</option>';
 
   function openViewModal(ev) {
     confirmingDeleteId = null;
+    confirmingEditId = null;
     var loc = locationById(ev.location);
     var d = parseDateKey(ev.date);
 
@@ -1277,35 +1368,60 @@
       return;
     }
     if (confirmingDeleteId === ev.id) {
+      var deleteScopeHtml = ev.seriesId
+        ? '<select id="vfDeleteScope" class="field-input rounded-md px-2 py-1.5 text-xs font-body">' + SERIES_SCOPE_OPTIONS + '</select>'
+        : '';
       footer.innerHTML =
         '<span class="text-xs font-body text-ink2 me-auto self-center">למחוק את האירוע?</span>' +
+        deleteScopeHtml +
         '<button type="button" id="vfCancelDelete" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-ghost transition-colors">ביטול</button>' +
         '<button type="button" id="vfConfirmDelete" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-danger transition-colors">אישור מחיקה</button>';
       document.getElementById('vfCancelDelete').addEventListener('click', function () { confirmingDeleteId = null; renderViewFooter(ev); });
-      document.getElementById('vfConfirmDelete').addEventListener('click', function () { deleteEvent(ev.id); });
+      document.getElementById('vfConfirmDelete').addEventListener('click', function () {
+        var scope = ev.seriesId ? document.getElementById('vfDeleteScope').value : 'this';
+        deleteEvent(ev, scope);
+      });
+    } else if (confirmingEditId === ev.id) {
+      footer.innerHTML =
+        '<span class="text-xs font-body text-ink2 me-auto self-center">לערוך:</span>' +
+        '<select id="vfEditScope" class="field-input rounded-md px-2 py-1.5 text-xs font-body">' + SERIES_SCOPE_OPTIONS + '</select>' +
+        '<button type="button" id="vfCancelEdit" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-ghost transition-colors">ביטול</button>' +
+        '<button type="button" id="vfContinueEdit" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-primary transition-colors">המשך</button>';
+      document.getElementById('vfCancelEdit').addEventListener('click', function () { confirmingEditId = null; renderViewFooter(ev); });
+      document.getElementById('vfContinueEdit').addEventListener('click', function () {
+        var scope = document.getElementById('vfEditScope').value;
+        confirmingEditId = null;
+        openEditModal(ev, scope);
+      });
     } else {
       footer.innerHTML =
         '<button type="button" id="vfDelete" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-danger transition-colors me-auto">מחיקה</button>' +
         '<button type="button" id="vfEdit" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-ghost transition-colors">עריכה</button>' +
         '<button type="button" id="vfClose" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-primary transition-colors">סגירה</button>';
       document.getElementById('vfDelete').addEventListener('click', function () { confirmingDeleteId = ev.id; renderViewFooter(ev); });
-      document.getElementById('vfEdit').addEventListener('click', function () { openEditModal(ev); });
+      document.getElementById('vfEdit').addEventListener('click', function () {
+        if (ev.seriesId) { confirmingEditId = ev.id; renderViewFooter(ev); }
+        else { openEditModal(ev, 'this'); }
+      });
       document.getElementById('vfClose').addEventListener('click', closeViewModal);
     }
   }
 
-  function deleteEvent(id) {
+  function deleteEvent(ev, scope) {
     if (!isEditor()) { showToast('כדי למחוק אירועים יש להתחבר עם Google.'); return; }
-    removeEvent(id).then(function () {
+    var action = (scope === 'all' && ev.seriesId) ? removeSeriesAll(ev.seriesId)
+      : (scope === 'following' && ev.seriesId) ? removeSeriesFrom(ev.seriesId, ev.date)
+      : removeEvent(ev.id);
+    action.then(function () {
       closeViewModal();
-      showToast('האירוע נמחק.');
+      showToast(scope === 'all' || scope === 'following' ? 'האירועים נמחקו.' : 'האירוע נמחק.');
       return loadEvents();
     }).catch(function (err) {
       handleWriteError(err);
     });
   }
 
-  function closeViewModal() { viewBackdrop.hidden = true; confirmingDeleteId = null; }
+  function closeViewModal() { viewBackdrop.hidden = true; confirmingDeleteId = null; confirmingEditId = null; }
   document.getElementById('viewCloseBtn').addEventListener('click', closeViewModal);
   viewBackdrop.addEventListener('click', function (e) { if (e.target === viewBackdrop) closeViewModal(); });
 

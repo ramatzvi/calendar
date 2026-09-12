@@ -82,9 +82,12 @@ create table events (
   location    text not null,
   description text default '',
   updated_at  timestamptz not null default now(),
-  created_by  uuid references auth.users(id) default auth.uid()
-);
+  created_by  uuid references auth.users(id) default auth.uid(),
+  series_id   uuid           -- shared by every occurrence of a recurring event;
+);                            -- NULL for a one-off. No FK, no separate table —
+                              -- it's just a grouping key for bulk update/delete.
 alter table events enable row level security;
+create index events_series_id_idx on events (series_id);
 
 create table editors ( email text primary key );
 alter table editors enable row level security;
@@ -190,3 +193,9 @@ just-deployed fix — append `?nocache=123` when re-checking.
    own `editors` row (allowed by the "read own editor row" policy). It's a UI
    convenience so non-editors see "צפייה בלבד" immediately; the RLS write policies
    on `events` are still the real enforcement.
+7. **Recurring events have no series table/RRULE — `series_id` is just a shared
+   grouping tag** on ordinary rows (see `docs/architecture.md` → "Recurring
+   events"). A single-row edit (`editPayload`) and a bulk edit
+   (`seriesEditPayload`) both deliberately omit `series_id` from the UPDATE, so
+   editing "just this event" can never accidentally sever it from its series.
+   A bulk edit also omits `date` — every occurrence keeps its own.

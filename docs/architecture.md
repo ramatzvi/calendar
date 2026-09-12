@@ -105,18 +105,19 @@ it defaults to whatever's selected, or the current view's date if nothing is.
 timed or all-day. A hit shows `window.confirm(...)`; declining aborts the
 save before it reaches Supabase.
 
-## Recurring events (add only)
+## Recurring events
 
-There is no recurrence "series" concept in the schema — a recurring event is
-**materialized as N independent rows** at add time, one per occurrence, each
-editable/deletable on its own afterwards (no series linkage, no "edit all
-occurrences"). This is deliberate: it fits the existing flat `events` table
-and rendering with zero changes, at the cost of Google-Calendar-style series
-editing. `openEditModal` hides `#recurringSection` entirely, so this only
-ever applies on add.
+There is no RRULE/virtual-occurrence engine — a recurring event is
+**materialized as N independent rows** at add time, one per occurrence, all
+sharing a client-generated `series_id` (`crypto.randomUUID()`; plain `uuid`
+column on `events`, no FK, no separate `series` table, no extra RLS — a bulk
+`UPDATE`/`DELETE ... WHERE series_id = X` is already covered by the existing
+`editors` policies). Each occurrence is still a completely normal `events`
+row otherwise, so all existing rendering/query code needed zero changes.
 
-- `#evtRecurring` reveals `#evtRecurFreq` (daily/weekly/monthly/yearly) and
-  `#evtRecurUntil` (an inclusive end date, required).
+**Add** (`openAddModal`/submit handler): `#evtRecurring` reveals
+`#evtRecurFreq` (daily/weekly/monthly/yearly) and `#evtRecurUntil` (an
+inclusive end date, required).
 - `buildRecurrenceDates(startDate, untilDate, freq)` returns the date-key
   list, capped at `RECUR_MAX` (366) as a safety net against a runaway range.
   monthly/yearly clamp to the target month's last day (so "31 Jan monthly"
@@ -127,14 +128,32 @@ ever applies on add.
   never repeats a date); a single `confirm()` summarizes the count if any
   hit, instead of one prompt per occurrence.
 - `insertEvents(dataArray)` sends all occurrences as **one** multi-row
-  `INSERT`, not N separate requests.
+  `INSERT`, tagging every row with the same new `series_id`.
+
+**Edit/delete a series member** (`renderViewFooter`, gated on `ev.seriesId`):
+clicking עריכה/מחיקה shows a "רק אירוע זה / אירוע זה וכל הבאים / כל האירועים
+בסדרה" scope chooser (skipped entirely for a non-series event — same
+single-row flow as before). The chosen scope drives:
+- **this** → the existing single-row `updateEvent`/`removeEvent`, unchanged.
+- **following** → `updateSeriesFrom`/`removeSeriesFrom` (`WHERE series_id = X
+  AND date >= <the date this event had when the modal opened>`).
+- **all** → `updateSeriesAll`/`removeSeriesAll` (`WHERE series_id = X`).
+
+For a bulk edit, `#evtDate` is disabled (each occurrence keeps its own date —
+`seriesEditPayload` strips `date`, and also `series_id`, from the UPDATE) and
+`#dateBulkHint` explains why. Bulk edits skip `findConflict` — checking one
+edit against a whole series' worth of rows is a fuzzier problem than the
+single-event case, so it's out of scope. `editPayload` (single-row update)
+also strips `series_id`, so editing "just this event" never severs it from
+its series by accident.
 
 ## Data layer (Supabase `events` table)
 
 Table `events`, columns `id, title, date, start_time, end_time, location,
-description, updated_at, created_by`. RLS: `public read` (anon `SELECT`),
-`editors insert/update/delete` (gated by `public.is_editor()` against the
-`editors` table). See `CLAUDE.md` → "Supabase schema".
+description, updated_at, created_by, series_id`. RLS: `public read` (anon
+`SELECT`), `editors insert/update/delete` (gated by `public.is_editor()`
+against the `editors` table) — these already cover bulk series operations,
+since they don't key off row content. See `CLAUDE.md` → "Supabase schema".
 
 - `loadEvents()` — `sb.from('events').select('id,title,date,start:start_time,end:end_time,location,description').order('date').order('start_time')`.
   The `start:start_time` / `end:end_time` aliases keep the rest of the app on
