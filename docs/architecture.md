@@ -20,7 +20,7 @@ var sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 `LOCATIONS` is a small hardcoded array (`{ id, name, color }`) — the location name
 is its own id: בית העם, בית אופיר, חורשת נועם, מגרש, דשא מרכזי, מועדון, בית כנסת,
-אחר. Edit the array to add/rename/recolour a location. The special `אחר` entry
+השכרת ציוד, אחר. Edit the array to add/rename/recolour a location. The special `אחר` entry
 makes the event form reveal a free-text field (`#evtLocationOther`); an event
 saved that way stores the typed string as its `location` and renders with `אחר`'s
 colour (`locationById()` synthesises an entry for any unknown id).
@@ -36,24 +36,31 @@ headers). The form's `#evtAllDay` checkbox hides/clears `#timeFields`;
 
 ## Auth (Supabase Auth + Google provider)
 
-- State object: `var authState = { signedIn: false, email: null, name: null, picture: null };`
+- State object: `var authState = { signedIn, email, name, picture, canEdit };`
   — a local mirror of the Supabase session's `user`, used only for the header UI
-  and the `isEditor()` gate.
+  and the `isEditor()` gate. `canEdit` starts `false` on every sign-in and is
+  filled in asynchronously (see below).
 - `signIn()` → `sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } })`.
   This is a **full-page redirect** to Google and back (not a popup); on return,
   supabase-js parses the URL and raises a `SIGNED_IN` event.
 - `signOut()` → `sb.auth.signOut()` then `clearSession()`.
 - `applySession(session, announce)` — fills `authState` from `session.user`
   (`email`, `user_metadata.full_name` / `.name`, `user_metadata.avatar_url` /
-  `.picture`), re-renders, and toasts "מחובר/ת בתור…" when `announce` is true.
-- `clearSession()` — resets `authState` and re-renders.
+  `.picture`), re-renders, then calls `refreshCanEdit(announce)`.
+- `refreshCanEdit(announce)` — `sb.from('editors').select('email')`. A SELECT
+  policy lets an authenticated user read *only their own* `editors` row, so a
+  non-empty result means "you're an editor". Sets `authState.canEdit`,
+  re-renders, and (if `announce`) toasts the right message for either case.
+- `clearSession()` — resets `authState` (`canEdit: false`) and re-renders.
 - On startup (INIT block): `sb.auth.getSession()` picks up an existing session, and
   `sb.auth.onAuthStateChange((event, session) => …)` handles the sign-in redirect
   landing, the hourly token refresh, and sign-out (here or in another tab).
   `announce` is passed `event === 'SIGNED_IN'` so a page load with a stored session
   doesn't toast.
-- `isEditor()` → `return !!authState.signedIn;` — optimistic UI gate only. Real
-  enforcement is the RLS write policy (see Data layer).
+- `isEditor()` → `return !!(authState.signedIn && authState.canEdit);` — a UI
+  convenience so non-editors see "צפייה בלבד" and no add/edit/delete controls
+  right away, instead of only finding out on a failed save. The RLS write
+  policies on `events` are still the real enforcement.
 - `handleWriteError(err)` — Postgres `42501` or HTTP `403` → toast "you're not an
   editor"; `401` / `PGRST301` (expired JWT) → `signOut()`; anything else → generic
   retry toast.
@@ -61,12 +68,41 @@ headers). The form's `#evtAllDay` checkbox hides/clears `#timeFields`;
 ## Header UI
 
 - `#authArea` → `#syncStatus`, plus:
-  - `#authSignedOut` → `#signInBtn` (Google "G" SVG + "התחברות עם Google")
-  - `#authSignedIn` (hidden by default) → `#authAvatar` (img), `#authName` (span),
+  - `#authSignedOut` → a static "צפייה בלבד" badge + `#signInBtn` (Google "G"
+    SVG + "התחברות עם Google") — a guest is inherently view-only, so this badge
+    needs no JS.
+  - `#authSignedIn` (hidden by default) → `#authAvatar` (img), `#authName`
+    (span), `#authViewOnly` (badge, shown when signed in but not an editor),
     `#signOutBtn` ("התנתקות")
-- `renderAuthUI()` toggles those two blocks and fills avatar/name.
+- `renderAuthUI()` toggles those two blocks, fills avatar/name/badge, and also
+  toggles `#addEventBtn`'s `hidden` (`!isEditor()`) — it's the one place that
+  reacts to every auth state change.
 - `#brandLogo` (`RamatZviLogo.png`) is absolutely positioned in the header's
-  top-left corner.
+  top-left corner. `#addEventBtn` sits in the header's top row next to the view
+  tabs (physically to their left in this RTL layout).
+
+## Day selection + adding an event
+
+Clicking a day (a month cell, a week/day column header, or an hour slot in
+week/day view) never opens the add-event form directly — it only calls
+`selectDate(dateKey, time)`, which sets `state.selectedDate`/`selectedTime` and
+re-renders. The selected day gets a yellow highlight (`.is-selected` on
+`.day-cell`/`.day-num` — same pattern as `.is-today`, just yellow instead of
+accent-blue; declared after `.is-today` in the stylesheet so a day that's both
+today and selected reads as selected). Any visitor can select a day — it's
+purely a visual focus, not an authorization check.
+
+The only way to open the add-event form is `#addEventBtn` (hidden unless
+`isEditor()`), in the header next to the view tabs. Its click handler calls
+`openAddModal(state.selectedDate || toKey(state.cursor), state.selectedTime)` —
+it defaults to whatever's selected, or the current view's date if nothing is.
+
+`findConflict(data, excludeId)` runs on form submit (add *and* edit): same
+`date` + `location` + overlapping `start`/`end` as another event in
+`state.events` (skipping `excludeId` so editing an event doesn't conflict with
+itself, and skipping any all-day event on either side, since "overlapping
+hours" doesn't apply to those). A hit shows `window.confirm(...)`; declining
+aborts the save before it reaches Supabase.
 
 ## Data layer (Supabase `events` table)
 

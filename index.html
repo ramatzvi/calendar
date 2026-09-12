@@ -48,6 +48,9 @@
     --accent: #4A5AE8;
     --accent-ink: #FFFFFF;
     --today-bg: #EAEDFF;
+    --selected-bg: #FEF3C7;
+    --selected: #F5C518;
+    --selected-ink: #1B2030;
     --ring: rgba(74, 90, 232, 0.35);
     --danger: #D0304A;
     --danger-ink: #FFFFFF;
@@ -66,6 +69,9 @@
       --accent: #8993FF;
       --accent-ink: #10121B;
       --today-bg: #1E2142;
+      --selected-bg: #3A331A;
+      --selected: #D4A017;
+      --selected-ink: #10121B;
       --ring: rgba(137, 147, 255, 0.35);
       --danger: #FF6B7F;
       --danger-ink: #2A0B10;
@@ -85,6 +91,9 @@
     --accent: #8993FF;
     --accent-ink: #10121B;
     --today-bg: #1E2142;
+    --selected-bg: #3A331A;
+    --selected: #D4A017;
+    --selected-ink: #10121B;
     --ring: rgba(137, 147, 255, 0.35);
     --danger: #FF6B7F;
     --danger-ink: #2A0B10;
@@ -129,6 +138,14 @@
     background: var(--accent);
     color: var(--accent-ink);
   }
+  /* Selected day (clicked, not necessarily today) — yellow, same pattern as
+     is-today above. Declared after it so a day that's both today and
+     selected shows as selected. */
+  .day-cell.is-selected { background: var(--selected-bg); }
+  .day-num.is-selected {
+    background: var(--selected);
+    color: var(--selected-ink);
+  }
 
   .chip {
     background: color-mix(in srgb, var(--loc) 20%, var(--surface));
@@ -145,7 +162,8 @@
   }
   .event-block:hover { filter: brightness(0.97); }
 
-  .hour-row { border-top: 2px solid #000; height: 56px; }
+  .hour-row { border-top: 2px solid #000; height: 56px; cursor: pointer; }
+  .hour-row:hover { background: var(--surface-alt); }
   .grid-col { border-inline-start: 2px solid #000; }
   .now-line { background: var(--danger); }
   .now-line::before {
@@ -245,12 +263,18 @@
       <button data-view="week" class="view-tab px-3 py-1.5 rounded-md text-sm font-semibold font-display transition-colors" role="tab">שבוע</button>
       <button data-view="day" class="view-tab px-3 py-1.5 rounded-md text-sm font-semibold font-display transition-colors" role="tab">יום</button>
     </div>
+
+    <button id="addEventBtn" type="button" hidden class="flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-semibold font-display btn-primary transition-colors shrink-0">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      הוספת אירוע
+    </button>
   </div>
 
   <div class="flex items-center justify-end gap-3 flex-wrap px-4 md:px-6 py-2 border-t border-edge">
     <div id="authArea" class="flex items-center gap-3 shrink-0">
       <p id="syncStatus" class="text-[11px] font-body text-ink2"></p>
-      <div id="authSignedOut" class="flex items-center">
+      <div id="authSignedOut" class="flex items-center gap-2">
+        <span class="text-[11px] font-body text-ink2 border border-edge rounded px-1.5 py-0.5">צפייה בלבד</span>
         <button id="signInBtn" type="button" class="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-edge bg-surface text-xs font-semibold font-display text-ink hover:bg-surfacealt transition-colors">
           <svg width="14" height="14" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-2.1 14.1-5.6l-6.5-5.5C29.6 34.9 27 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5c3.3 6.6 10 11 17.8 11z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.7l6.5 5.5C39.9 37.4 44 31.4 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>
           התחברות עם Google
@@ -396,6 +420,7 @@
     { id: 'דשא מרכזי', name: 'דשא מרכזי', color: '#22c55e' },
     { id: 'מועדון', name: 'מועדון', color: '#f97316' },
     { id: 'בית כנסת', name: 'בית כנסת', color: '#3b82f6' },
+    { id: 'השכרת ציוד', name: 'השכרת ציוד', color: '#14b8a6' },
     // "אחר" (Other): picking it in the form reveals a free-text field so
     // an editor can type a one-off location. Such an event's `location`
     // is the typed string; it renders with this colour and its own name.
@@ -441,7 +466,18 @@
     cursor: new Date(TODAY),
     events: [],
     editingId: null,
+    selectedDate: null,   // date key clicked in month/week/day view (yellow highlight)
+    selectedTime: null,   // hour slot clicked in week/day view, if any
   };
+
+  // Clicking a day (or hour slot) only selects it — it no longer opens the
+  // add-event form directly (see #addEventBtn). Any user may select a day;
+  // it's purely a visual focus + a default for the add-event button.
+  function selectDate(dateKey, time) {
+    state.selectedDate = dateKey;
+    state.selectedTime = time || null;
+    renderAll();
+  }
 
   // Google auth state, mirrored from the Supabase session. `canEdit` is
   // filled in after sign-in by a probe of the "editors" table (see
@@ -535,6 +571,7 @@
       outEl.hidden = false;
       inEl.hidden = true;
     }
+    document.getElementById('addEventBtn').hidden = !isEditor();
   }
 
   function setSyncStatus(msg) {
@@ -654,6 +691,24 @@
       .sort(function (a, b) { return minutesOf(a.start) - minutesOf(b.start); });
   }
 
+  // Same day + same location + overlapping hours as an existing event?
+  // Both events must be timed — all-day events (no start/end) are never
+  // flagged, since "overlapping hours" doesn't apply to them. `excludeId`
+  // skips the event being edited so it doesn't conflict with itself.
+  function findConflict(data, excludeId) {
+    if (!data.start || !data.end) return null;
+    var newS = minutesOf(data.start), newE = minutesOf(data.end);
+    for (var i = 0; i < state.events.length; i++) {
+      var e = state.events[i];
+      if (e.id === excludeId) continue;
+      if (e.date !== data.date || e.location !== data.location) continue;
+      if (!e.start || !e.end) continue;
+      var s = minutesOf(e.start), en = minutesOf(e.end);
+      if (newS < en && s < newE) return e;
+    }
+    return null;
+  }
+
   /* ---------------- OVERLAP LAYOUT (week/day) ---------------- */
 
   function layoutDayEvents(dayEvents) {
@@ -714,13 +769,14 @@
       var key = toKey(d);
       var inMonth = d.getMonth() === monthStart.getMonth();
       var today = sameDay(d, TODAY);
+      var selected = state.selectedDate === key;
       var dayEvents = eventsOn(key);
       var visible = dayEvents.slice(0, 2);
       var extra = dayEvents.length - visible.length;
 
-      html += '<div class="day-cell relative min-h-[104px] p-1.5 flex flex-col gap-1 cursor-pointer' + (today ? ' is-today' : '') + '" data-add-date="' + key + '">';
+      html += '<div class="day-cell relative min-h-[104px] p-1.5 flex flex-col gap-1 cursor-pointer' + (today ? ' is-today' : '') + (selected ? ' is-selected' : '') + '" data-select-date="' + key + '">';
       html += '<div class="flex items-center justify-between">';
-      html += '<span class="day-num' + (today ? ' is-today' : '') + ' w-6 h-6 grid place-items-center rounded-full text-[13px] font-display font-semibold ' + (inMonth ? 'text-ink' : 'text-ink2 opacity-50') + '">' + d.getDate() + '</span>';
+      html += '<span class="day-num' + (today ? ' is-today' : '') + (selected ? ' is-selected' : '') + ' w-6 h-6 grid place-items-center rounded-full text-[13px] font-display font-semibold ' + (inMonth ? 'text-ink' : 'text-ink2 opacity-50') + '">' + d.getDate() + '</span>';
       if (i < 7) html += '<span class="text-[10px] font-display font-semibold text-ink2">' + (d.getDate() === 1 ? MONTH_NAMES[d.getMonth()] : '') + '</span>';
       html += '</div>';
       html += '<div class="flex flex-col gap-1 min-w-0">';
@@ -754,10 +810,12 @@
     html += '<div class="grid border-b-2 border-black" style="grid-template-columns: 56px repeat(' + cols + ', 1fr);">';
     html += '<div></div>';
     days.forEach(function (d) {
+      var key = toKey(d);
       var today = sameDay(d, TODAY);
-      html += '<div class="py-2 text-center border-s-2 border-black">' +
+      var selected = state.selectedDate === key;
+      html += '<div class="py-2 text-center border-s-2 border-black cursor-pointer" data-select-date="' + key + '">' +
         '<div class="text-[11px] font-display font-semibold text-ink2">' + DAY_NAMES[d.getDay()] + '</div>' +
-        '<div class="day-num' + (today ? ' is-today' : '') + ' w-7 h-7 mx-auto mt-0.5 grid place-items-center rounded-full text-sm font-display font-bold ' + (today ? '' : 'text-ink') + '">' + d.getDate() + '</div>' +
+        '<div class="day-num' + (today ? ' is-today' : '') + (selected ? ' is-selected' : '') + ' w-7 h-7 mx-auto mt-0.5 grid place-items-center rounded-full text-sm font-display font-bold ' + (today || selected ? '' : 'text-ink') + '">' + d.getDate() + '</div>' +
         '</div>';
     });
     html += '</div>';
@@ -800,7 +858,7 @@
 
       html += '<div class="grid-col relative" data-day-col="' + key + '">';
       for (var hh = 0; hh < 24; hh++) {
-        html += '<div class="hour-row" data-add-slot="' + key + '|' + pad(hh) + ':00"></div>';
+        html += '<div class="hour-row" data-select-slot="' + key + '|' + pad(hh) + ':00"></div>';
       }
 
       placed.forEach(function (p) {
@@ -1019,6 +1077,12 @@
     };
 
     var isEdit = !!state.editingId;
+
+    var conflict = findConflict(data, state.editingId);
+    if (conflict && !window.confirm('קיים כבר אירוע באותו מקום ובאותן שעות ("' + conflict.title + '"). האם להוסיף את האירוע בכל זאת?')) {
+      return;
+    }
+
     var submitBtn = document.getElementById('formSubmitBtn');
     submitBtn.disabled = true;
 
@@ -1148,15 +1212,18 @@
       document.querySelectorAll('.view-tab').forEach(function (b) { b.setAttribute('aria-selected', b.dataset.view === 'day' ? 'true' : 'false'); });
       return;
     }
-    var addCell = e.target.closest('[data-add-date]');
-    if (addCell && !e.target.closest('[data-view-event],[data-goto-day]')) {
-      openAddModal(addCell.dataset.addDate, '09:00');
+    // Clicking a day (month cell, or a week/day header) or an hour slot only
+    // selects it (yellow highlight) — it no longer opens the add-event form.
+    // Use #addEventBtn for that; it defaults to whatever is selected here.
+    var selCell = e.target.closest('[data-select-date]');
+    if (selCell && !e.target.closest('[data-view-event],[data-goto-day]')) {
+      selectDate(selCell.dataset.selectDate, null);
       return;
     }
-    var addSlot = e.target.closest('[data-add-slot]');
-    if (addSlot && !e.target.closest('[data-view-event]')) {
-      var parts = addSlot.dataset.addSlot.split('|');
-      openAddModal(parts[0], parts[1]);
+    var selSlot = e.target.closest('[data-select-slot]');
+    if (selSlot && !e.target.closest('[data-view-event]')) {
+      var parts = selSlot.dataset.selectSlot.split('|');
+      selectDate(parts[0], parts[1]);
       return;
     }
   });
@@ -1167,6 +1234,9 @@
   document.getElementById('todayBtn').addEventListener('click', goToday);
   document.getElementById('prevBtn').addEventListener('click', function () { navigate(-1); });
   document.getElementById('nextBtn').addEventListener('click', function () { navigate(1); });
+  document.getElementById('addEventBtn').addEventListener('click', function () {
+    openAddModal(state.selectedDate || toKey(state.cursor), state.selectedTime);
+  });
 
   document.getElementById('signInBtn').addEventListener('click', signIn);
   document.getElementById('signOutBtn').addEventListener('click', signOut);
