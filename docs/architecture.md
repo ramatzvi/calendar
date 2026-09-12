@@ -105,6 +105,30 @@ it defaults to whatever's selected, or the current view's date if nothing is.
 timed or all-day. A hit shows `window.confirm(...)`; declining aborts the
 save before it reaches Supabase.
 
+## Recurring events (add only)
+
+There is no recurrence "series" concept in the schema — a recurring event is
+**materialized as N independent rows** at add time, one per occurrence, each
+editable/deletable on its own afterwards (no series linkage, no "edit all
+occurrences"). This is deliberate: it fits the existing flat `events` table
+and rendering with zero changes, at the cost of Google-Calendar-style series
+editing. `openEditModal` hides `#recurringSection` entirely, so this only
+ever applies on add.
+
+- `#evtRecurring` reveals `#evtRecurFreq` (daily/weekly/monthly/yearly) and
+  `#evtRecurUntil` (an inclusive end date, required).
+- `buildRecurrenceDates(startDate, untilDate, freq)` returns the date-key
+  list, capped at `RECUR_MAX` (366) as a safety net against a runaway range.
+  monthly/yearly clamp to the target month's last day (so "31 Jan monthly"
+  lands on 28 Feb, 31 Mar, 30 Apr, ... — not JS's raw `setMonth` overflow
+  into the next month).
+- Each date is conflict-checked (`findConflict`) against *existing* events
+  only (occurrences never conflict with each other, since the generator
+  never repeats a date); a single `confirm()` summarizes the count if any
+  hit, instead of one prompt per occurrence.
+- `insertEvents(dataArray)` sends all occurrences as **one** multi-row
+  `INSERT`, not N separate requests.
+
 ## Data layer (Supabase `events` table)
 
 Table `events`, columns `id, title, date, start_time, end_time, location,

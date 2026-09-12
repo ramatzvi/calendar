@@ -334,6 +334,29 @@
         </div>
         <p id="timeError" hidden class="text-xs font-body text-[var(--danger)] -mt-2">שעת הסיום חייבת להיות אחרי שעת ההתחלה.</p>
 
+        <div id="recurringSection" class="flex flex-col gap-2">
+          <label class="flex items-center gap-2 text-xs font-semibold font-display text-ink2 select-none cursor-pointer">
+            <input id="evtRecurring" type="checkbox" class="accent-[var(--accent)] w-3.5 h-3.5">
+            אירוע מחזורי
+          </label>
+          <div id="recurringFields" hidden class="grid grid-cols-2 gap-3">
+            <div class="flex flex-col gap-1">
+              <label for="evtRecurFreq" class="text-xs font-semibold font-display text-ink2">תדירות</label>
+              <select id="evtRecurFreq" class="field-input rounded-md px-3 py-2 text-sm font-body">
+                <option value="daily">יומי</option>
+                <option value="weekly" selected>שבועי</option>
+                <option value="monthly">חודשי</option>
+                <option value="yearly">שנתי</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="evtRecurUntil" class="text-xs font-semibold font-display text-ink2">חוזר עד (כולל)</label>
+              <input id="evtRecurUntil" type="date" class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
+            </div>
+          </div>
+          <p id="recurError" hidden class="text-xs font-body text-[var(--danger)] -mt-2"></p>
+        </div>
+
         <div class="flex flex-col gap-1">
           <label for="evtLocation" class="text-xs font-semibold font-display text-ink2">מיקום</label>
           <div class="flex items-center gap-2">
@@ -647,6 +670,14 @@
     });
   }
 
+  // Bulk insert for a recurring event's occurrences — one INSERT with many
+  // rows, instead of firing one request per date.
+  function insertEvents(dataArray) {
+    return sb.from('events').insert(dataArray.map(eventPayload)).then(function (res) {
+      if (res.error) throw res.error; return res;
+    });
+  }
+
   function updateEvent(id, data) {
     return sb.from('events').update(eventPayload(data)).eq('id', id).then(function (res) {
       if (res.error) throw res.error; return res;
@@ -712,6 +743,34 @@
       if (newR[0] < r[1] && r[0] < newR[1]) return e;
     }
     return null;
+  }
+
+  // Recurring-event date list: startDate offset by n·interval, for
+  // n = 0, 1, 2, ... until the offset date passes untilDate (inclusive) or
+  // RECUR_MAX occurrences are reached, whichever comes first. monthly/yearly
+  // clamp to the target month's last day instead of letting JS's setMonth
+  // roll overflow into the next month (so "Jan 31, monthly" lands on Feb 28,
+  // Mar 31, Apr 30, ... like Google Calendar, not Feb 31 -> Mar 3).
+  var RECUR_MAX = 366;
+  function buildRecurrenceDates(startDate, untilDate, freq) {
+    var out = [];
+    var y0 = startDate.getFullYear(), m0 = startDate.getMonth(), day0 = startDate.getDate();
+    for (var n = 0; out.length < RECUR_MAX; n++) {
+      var d;
+      if (freq === 'daily') { d = new Date(startDate); d.setDate(d.getDate() + n); }
+      else if (freq === 'weekly') { d = new Date(startDate); d.setDate(d.getDate() + 7 * n); }
+      else if (freq === 'monthly') {
+        var lastDayM = new Date(y0, m0 + n + 1, 0).getDate();
+        d = new Date(y0, m0 + n, Math.min(day0, lastDayM));
+      } else { // yearly
+        var ty = y0 + n;
+        var lastDayY = new Date(ty, m0 + 1, 0).getDate();
+        d = new Date(ty, m0, Math.min(day0, lastDayY));
+      }
+      if (d > untilDate) break;
+      out.push(toKey(d));
+    }
+    return out;
   }
 
   /* ---------------- OVERLAP LAYOUT (week/day) ---------------- */
@@ -1003,6 +1062,15 @@
     }
   }
 
+  // "אירוע מחזורי" checkbox — reveals the frequency + end-date fields.
+  // Only offered when adding (openEditModal hides #recurringSection
+  // entirely — editing a single occurrence never creates a new series).
+  function updateRecurringToggle() {
+    var on = document.getElementById('evtRecurring').checked;
+    document.getElementById('recurringFields').hidden = !on;
+    document.getElementById('recurError').hidden = true;
+  }
+
   function openAddModal(dateKey, startTime) {
     if (!isEditor()) { showToast('רק עורכים מורשים יכולים להוסיף אירועים.'); return; }
     state.editingId = null;
@@ -1013,9 +1081,13 @@
     document.getElementById('evtAllDay').checked = false;
     document.getElementById('evtStart').value = startTime || '09:00';
     document.getElementById('evtEnd').value = addOneHour(startTime || '09:00');
+    document.getElementById('recurringSection').hidden = false;
+    document.getElementById('evtRecurring').checked = false;
+    document.getElementById('evtRecurUntil').value = '';
     populateLocationSelect();
     updateSwatch();
     updateAllDayToggle();
+    updateRecurringToggle();
     document.getElementById('timeError').hidden = true;
     formBackdrop.hidden = false;
     setTimeout(function () { document.getElementById('evtTitle').focus(); }, 0);
@@ -1032,6 +1104,10 @@
     document.getElementById('evtStart').value = ev.start || '';
     document.getElementById('evtEnd').value = ev.end || '';
     updateAllDayToggle();
+    // Editing a single occurrence never creates a new series.
+    document.getElementById('recurringSection').hidden = true;
+    document.getElementById('evtRecurring').checked = false;
+    updateRecurringToggle();
     var knownLoc = LOCATIONS.some(function (l) { return l.id === ev.location; });
     document.getElementById('evtLocation').value = knownLoc ? ev.location : 'אחר';
     document.getElementById('evtLocationOther').value = knownLoc ? '' : (ev.location || '');
@@ -1089,13 +1165,62 @@
     };
 
     var isEdit = !!state.editingId;
+    var submitBtn = document.getElementById('formSubmitBtn');
+    // Recurring only applies when adding — editing an occurrence is always
+    // just that one row (see openEditModal, which hides the section).
+    var recurring = !isEdit && document.getElementById('evtRecurring').checked;
+
+    if (recurring) {
+      var recurErr = document.getElementById('recurError');
+      var freq = document.getElementById('evtRecurFreq').value;
+      var untilStr = document.getElementById('evtRecurUntil').value;
+      if (!untilStr) {
+        recurErr.textContent = 'יש לבחור תאריך לסיום החזרה.';
+        recurErr.hidden = false;
+        return;
+      }
+      var startDate = parseDateKey(data.date);
+      var untilDate = parseDateKey(untilStr);
+      if (untilDate < startDate) {
+        recurErr.textContent = 'תאריך הסיום חייב להיות בתאריך ההתחלה או אחריו.';
+        recurErr.hidden = false;
+        return;
+      }
+      recurErr.hidden = true;
+
+      var dates = buildRecurrenceDates(startDate, untilDate, freq);
+      var conflictCount = dates.filter(function (dk) {
+        return !!findConflict({ date: dk, location: data.location, start: data.start, end: data.end }, null);
+      }).length;
+      if (conflictCount > 0) {
+        var msg = conflictCount === dates.length
+          ? 'לכל התאריכים שנבחרו יש כבר אירוע חופף באותו מקום. להוסיף את כל האירועים בכל זאת?'
+          : 'ל-' + conflictCount + ' מתוך ' + dates.length + ' התאריכים שנבחרו יש כבר אירוע חופף באותו מקום. להוסיף את כל האירועים בכל זאת?';
+        if (!window.confirm(msg)) return;
+      }
+
+      submitBtn.disabled = true;
+      insertEvents(dates.map(function (dk) {
+        var occurrence = {}; for (var k in data) occurrence[k] = data[k];
+        occurrence.date = dk;
+        return occurrence;
+      })).then(function () {
+        showToast(dates.length + ' מופעים של האירוע נוספו.');
+        closeFormModal();
+        return loadEvents();
+      }).catch(function (err) {
+        handleWriteError(err);
+      }).then(function () {
+        submitBtn.disabled = false;
+      });
+      return;
+    }
 
     var conflict = findConflict(data, state.editingId);
     if (conflict && !window.confirm('קיים כבר אירוע באותו מקום ובאותן שעות ("' + conflict.title + '"). האם להוסיף את האירוע בכל זאת?')) {
       return;
     }
 
-    var submitBtn = document.getElementById('formSubmitBtn');
     submitBtn.disabled = true;
 
     (isEdit ? updateEvent(state.editingId, data) : insertEvent(data)).then(function () {
@@ -1112,6 +1237,7 @@
   document.getElementById('formCloseBtn').addEventListener('click', closeFormModal);
   document.getElementById('formCancelBtn').addEventListener('click', closeFormModal);
   document.getElementById('evtAllDay').addEventListener('change', updateAllDayToggle);
+  document.getElementById('evtRecurring').addEventListener('change', updateRecurringToggle);
   document.getElementById('evtLocation').addEventListener('change', function () {
     updateSwatch();
     if (document.getElementById('evtLocation').value === 'אחר') {
