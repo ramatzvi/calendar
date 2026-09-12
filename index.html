@@ -923,6 +923,13 @@
 
   function setView(view) {
     state.view = view;
+    // Switching to week/day follows the selected day, if there is one, so
+    // they open on whatever's currently focused instead of wherever the
+    // cursor last was. Month view is left alone — clicking a leading/
+    // trailing day from an adjacent month shouldn't jump the month grid.
+    if (state.selectedDate && (view === 'week' || view === 'day')) {
+      state.cursor = parseDateKey(state.selectedDate);
+    }
     document.getElementById('monthView').hidden = view !== 'month';
     document.getElementById('weekView').hidden = view !== 'week';
     document.getElementById('dayView').hidden = view !== 'day';
@@ -1207,7 +1214,8 @@
     }
     var gotoBtn = e.target.closest('[data-goto-day]');
     if (gotoBtn) {
-      state.cursor = parseDateKey(gotoBtn.dataset.gotoDay);
+      state.selectedDate = gotoBtn.dataset.gotoDay;
+      state.selectedTime = null;
       setView('day');
       document.querySelectorAll('.view-tab').forEach(function (b) { b.setAttribute('aria-selected', b.dataset.view === 'day' ? 'true' : 'false'); });
       return;
