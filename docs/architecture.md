@@ -98,11 +98,12 @@ The only way to open the add-event form is `#addEventBtn` (hidden unless
 it defaults to whatever's selected, or the current view's date if nothing is.
 
 `findConflict(data, excludeId)` runs on form submit (add *and* edit): same
-`date` + `location` + overlapping `start`/`end` as another event in
-`state.events` (skipping `excludeId` so editing an event doesn't conflict with
-itself, and skipping any all-day event on either side, since "overlapping
-hours" doesn't apply to those). A hit shows `window.confirm(...)`; declining
-aborts the save before it reaches Supabase.
+`date` + `location` + overlapping hours as another event in `state.events`
+(skipping `excludeId` so editing an event doesn't conflict with itself).
+`timeRange(ev)` treats an all-day event (no start/end) as spanning
+00:00–24:00, so it conflicts with *any* event at that location that day,
+timed or all-day. A hit shows `window.confirm(...)`; declining aborts the
+save before it reaches Supabase.
 
 ## Data layer (Supabase `events` table)
 

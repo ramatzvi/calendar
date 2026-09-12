@@ -691,20 +691,25 @@
       .sort(function (a, b) { return minutesOf(a.start) - minutesOf(b.start); });
   }
 
-  // Same day + same location + overlapping hours as an existing event?
-  // Both events must be timed — all-day events (no start/end) are never
-  // flagged, since "overlapping hours" doesn't apply to them. `excludeId`
-  // skips the event being edited so it doesn't conflict with itself.
+  // An all-day event has no start/end, but it still occupies the whole day
+  // for conflict purposes — treat it as spanning 00:00–24:00.
+  function timeRange(ev) {
+    if (!ev.start || !ev.end) return [0, 24 * 60];
+    return [minutesOf(ev.start), minutesOf(ev.end)];
+  }
+
+  // Same day + same location + overlapping hours as an existing event
+  // (an all-day event overlaps everything that day at that location).
+  // `excludeId` skips the event being edited so it doesn't conflict with
+  // itself.
   function findConflict(data, excludeId) {
-    if (!data.start || !data.end) return null;
-    var newS = minutesOf(data.start), newE = minutesOf(data.end);
+    var newR = timeRange(data);
     for (var i = 0; i < state.events.length; i++) {
       var e = state.events[i];
       if (e.id === excludeId) continue;
       if (e.date !== data.date || e.location !== data.location) continue;
-      if (!e.start || !e.end) continue;
-      var s = minutesOf(e.start), en = minutesOf(e.end);
-      if (newS < en && s < newE) return e;
+      var r = timeRange(e);
+      if (newR[0] < r[1] && r[0] < newR[1]) return e;
     }
     return null;
   }
