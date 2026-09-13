@@ -230,3 +230,12 @@ just-deployed fix — append `?nocache=123` when re-checking.
    (`seriesEditPayload`) both deliberately omit `series_id` from the UPDATE, so
    editing "just this event" can never accidentally sever it from its series.
    A bulk edit also omits `date` — every occurrence keeps its own.
+8. **In `public.log_event_change()` (the change-log trigger, see below), never
+   test `new is not null` / `old is not null` to distinguish INSERT/UPDATE/
+   DELETE.** For a composite row value, Postgres defines `IS NOT NULL` as "all
+   fields are non-null" — since `series_id` (and other nullable columns) is
+   NULL on every normal event, that test was silently false and skipped the
+   whole branch, even on an INSERT. Use `tg_op` instead (`'INSERT'`/`'UPDATE'`/
+   `'DELETE'`) — it's unambiguous and doesn't depend on column nullability.
+   Also: `to_char()` has no overload for the `time` type — use
+   `left(x::text, 5)` to get `HH:MM` from a `time` column, not `to_char(x, ...)`.
