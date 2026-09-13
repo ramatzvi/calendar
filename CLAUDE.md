@@ -145,6 +145,37 @@ read-only calendar unless their email is in `editors`). There is no test-user ca
 and no "unverified app" warning anymore, because the app only requests the
 non-sensitive `email` / `profile` / `openid` scopes.
 
+## Change log (audit trail)
+
+Every insert/update/delete on `events` is mirrored as one row (מתי / מי / מה)
+into a Google Sheet (`18321eSScEPEn65TmN7bEODcFqyZqVv_3qz8ebVS-Qtw`, tab
+`יומן שינויים`) — **entirely server-side**, so the browser never needs Google
+Sheets OAuth scopes (deliberately avoided — that scope is exactly what was
+removed earlier to get out of Google's verification requirement; re-adding it
+client-side would bring that back for every sign-in).
+
+- **`public.log_event_change()`** — a `security definer` trigger function on
+  `events` (`AFTER INSERT OR UPDATE OR DELETE ... FOR EACH ROW`). Builds a
+  Hebrew description (prioritizing a date/time change if that's what changed,
+  else title, else location, else a generic "updated") and fires it off with
+  `net.http_post` (the `pg_net` extension) to a Google Apps Script Web App
+  URL, as `{secret, when, who, what}` JSON. `who` comes from `auth.jwt() ->>
+  'email'` — same mechanism `is_editor()` relies on.
+- The Apps Script (`doPost`, deployed as a Web App, "Execute as: Me" / "Anyone"
+  can call it) checks a shared-secret string before appending a row — that
+  secret is the *only* thing gating the endpoint, since Apps Script Web Apps
+  can't do Google OAuth-in from Postgres. Both the secret and the webhook URL
+  are hardcoded into the trigger function's SQL body (safe: PostgREST doesn't
+  expose `pg_proc`/function source to anon or authenticated roles — the only
+  way to read them is the Supabase SQL editor, which needs the owner's own
+  login).
+- `net.http_post` is fire-and-forget — a webhook failure never blocks or
+  fails the actual calendar write. If a log entry seems to be missing, check
+  the `net._http_response` table in the SQL editor for the delivery attempt.
+- A bulk operation (recurring add, or an edit/delete scoped to "following"/
+  "all") fires the trigger once per affected row, so it logs one line per
+  occurrence — that's intentional, not a bug.
+
 ## Google OAuth setup (for reference)
 
 - Supabase dashboard → **Authentication → Providers → Google**: enabled, holds the
