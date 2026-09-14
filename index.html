@@ -915,16 +915,16 @@
       var visible = dayEvents.slice(0, 2);
       var extra = dayEvents.length - visible.length;
 
-      html += '<div class="day-cell relative min-h-[104px] p-1.5 flex flex-col gap-1 cursor-pointer' + (today ? ' is-today' : '') + (selected ? ' is-selected' : '') + '" data-select-date="' + key + '">';
+      html += '<div class="day-cell relative min-h-[104px] p-1 flex flex-col gap-0.5 cursor-pointer' + (today ? ' is-today' : '') + (selected ? ' is-selected' : '') + '" data-select-date="' + key + '">';
       html += '<div class="flex items-center justify-between">';
       html += '<span class="day-num' + (today ? ' is-today' : '') + (selected ? ' is-selected' : '') + ' w-6 h-6 grid place-items-center rounded-full text-[13px] font-display font-semibold ' + (inMonth ? 'text-ink' : 'text-ink2 opacity-50') + '">' + d.getDate() + '</span>';
       if (i < 7) html += '<span class="text-[10px] font-display font-semibold text-ink2">' + (d.getDate() === 1 ? MONTH_NAMES[d.getMonth()] : '') + '</span>';
       html += '</div>';
-      html += '<div class="flex flex-col gap-1 min-w-0">';
+      html += '<div class="flex flex-col gap-0.5 min-w-0">';
       visible.forEach(function (ev) {
         var loc = locationById(ev.location);
         var timeLabel = ev.start ? '<span class="font-mono tabular">' + formatClock(ev.start) + '</span> ' : '';
-        html += '<button data-view-event="' + ev.id + '" class="chip text-start text-[11px] font-body font-medium leading-tight px-1.5 py-1 rounded truncate" style="--loc:' + loc.color + '" title="' + escapeAttr(ev.title) + '">' +
+        html += '<button data-view-event="' + ev.id + '" class="chip text-start text-[11px] font-body font-medium leading-tight px-1 py-0.5 rounded break-words line-clamp-2" style="--loc:' + loc.color + '" title="' + escapeAttr(ev.title) + '">' +
           timeLabel + escapeHtml(ev.title) + '</button>';
       });
       if (extra > 0) {
@@ -969,10 +969,10 @@
       html += '<div class="pl-2 py-1 text-left text-[10px] font-display font-semibold text-ink2">כל היום</div>';
       days.forEach(function (d) {
         var ad = eventsOn(toKey(d)).filter(function (e) { return !e.start; });
-        html += '<div class="border-s-2 border-black p-1 flex flex-col gap-1 min-w-0">';
+        html += '<div class="border-s-2 border-black p-0.5 flex flex-col gap-0.5 min-w-0">';
         ad.forEach(function (ev) {
           var loc = locationById(ev.location);
-          html += '<button data-view-event="' + ev.id + '" class="chip block w-full text-start text-[11px] font-body font-medium leading-tight px-1.5 py-1 rounded truncate" style="--loc:' + loc.color + '" title="' + escapeAttr(ev.title) + '">' + escapeHtml(ev.title) + '</button>';
+          html += '<button data-view-event="' + ev.id + '" class="chip block w-full text-start text-[11px] font-body font-medium leading-tight px-1 py-0.5 rounded break-words line-clamp-2" style="--loc:' + loc.color + '" title="' + escapeAttr(ev.title) + '">' + escapeHtml(ev.title) + '</button>';
         });
         html += '</div>';
       });
