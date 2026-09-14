@@ -42,6 +42,40 @@ edit. The design:
   `editors` table. A non-editor's write fails with Postgres error `42501`.
 - **Who can edit** is one list Ofir manages directly — see "Managing editors".
 
+## Current feature set (status snapshot)
+
+Everything below is built, deployed, and working on the live site as of the
+latest session. Full implementation detail for each lives in
+`docs/architecture.md`; this is just the at-a-glance list.
+
+- **Views**: month / week / day, plus an all-day band pinned above the hour
+  grid in week/day. Clicking a day (or an hour slot) never opens the add
+  form — it only *selects* that day (yellow `.is-selected` highlight, same
+  pattern as `.is-today`). Switching to week/day follows the current
+  selection instead of wherever the view last was.
+- **Add**: the only entry point is `#addEventBtn` in the header (hidden
+  unless `isEditor()`), defaulting to whatever's selected. Supports a
+  one-off event or a **recurring** one (daily/weekly/monthly/yearly) — see
+  gotcha 7 and "Recurring events" in `docs/architecture.md`. Warns (with an
+  override option) on a same-date/location/overlapping-hours conflict,
+  including against all-day events (an all-day event conflicts with
+  anything that day at that location).
+- **Edit/delete a series member**: a "this / this-and-following / all"
+  scope chooser appears first. The bulk paths can also *shift* every
+  affected occurrence's date by the same offset if the date field is
+  changed, instead of collapsing them onto one date.
+- **Access**: a guest (not signed in) sees a static "צפייה בלבד" badge; a
+  signed-in non-editor sees the same badge via `refreshCanEdit()`, instead
+  of only discovering it after a failed save.
+- **Change log**: every insert/update/delete on `events` is mirrored to a
+  Google Sheet — see "Change log (audit trail)" below.
+- **Locations** (9): בית העם, בית אופיר, חורשת נועם, מגרש, דשא מרכזי,
+  מועדון, בית כנסת, השכרת ציוד, and `אחר` (reveals a free-text field).
+- **Month-view chips**: intentionally **no truncation** — a long title wraps
+  onto as many lines as it needs (no `line-clamp`), matching a reference
+  calendar app the user shared. Cells grow taller for long titles,
+  especially on narrow/mobile widths — an accepted tradeoff, not a bug.
+
 ## Tech stack
 
 - Plain HTML/CSS/JS, single file (`index.html`, ~770KB — most of that is three
