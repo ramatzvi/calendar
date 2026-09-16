@@ -1672,8 +1672,11 @@
         });
       });
     } else {
-      footer.innerHTML = '<button type="button" id="logClearBtn" class="btn-danger" style="margin-inline-end:auto">מחק שינויים</button>';
+      footer.innerHTML =
+        '<button type="button" id="logClearBtn" class="btn-danger" style="margin-inline-end:auto">מחק שינויים</button>' +
+        '<button type="button" id="logCloseBtn" class="btn-primary">סגור</button>';
       logWin.document.getElementById('logClearBtn').addEventListener('click', function () { confirmingClearLog = true; renderLogFooter(); });
+      logWin.document.getElementById('logCloseBtn').addEventListener('click', function () { logWin.close(); });
     }
   }
 

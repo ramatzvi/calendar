@@ -231,9 +231,9 @@ window name).
   (not the main page's `document`) — every DOM call in this feature is
   guarded by `if (!logWin || logWin.closed) return;` since the popup can be
   closed by the user at any point, including mid-fetch.
-- `renderLogFooter()` toggles between the normal footer (just מחק שינויים —
-  closing the window is the OS window chrome's job, no "סגירה" button
-  needed) and a confirm-before-delete footer (ביטול / אישור מחיקה) — the
+- `renderLogFooter()` toggles between the normal footer (מחק שינויים /
+  סגירה, the latter just `logWin.close()`) and a confirm-before-delete
+  footer (ביטול / אישור מחיקה) — the
   same two-step pattern `renderViewFooter()` uses for deleting an event.
   Confirming calls `clearChangeLogRequest()` then reloads the table.
 
