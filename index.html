@@ -278,17 +278,19 @@
       <button data-view="day" class="view-tab px-3 py-1.5 rounded-md text-sm font-semibold font-display transition-colors" role="tab">יום</button>
     </div>
 
-    <button id="logLink" type="button" hidden aria-label="קובץ לוג" title="קובץ לוג" class="w-8 h-8 grid place-items-center rounded-md btn-primary transition-colors shrink-0">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path d="M4.5 2h4l3 3v8a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-        <path d="M8.5 2v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-        <path d="M5.5 8.5h5M5.5 10.8h5M5.5 6.2h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-      </svg>
-    </button>
-    <button id="addEventBtn" type="button" hidden class="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-md text-sm font-semibold font-display btn-primary transition-colors shrink-0">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-      <span class="hidden sm:inline">הוספת אירוע</span>
-    </button>
+    <div class="flex items-center gap-2 shrink-0 ms-auto">
+      <button id="logLink" type="button" hidden aria-label="קובץ לוג" title="קובץ לוג" class="w-8 h-8 grid place-items-center rounded-md btn-primary transition-colors shrink-0">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M4.5 2h4l3 3v8a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+          <path d="M8.5 2v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+          <path d="M5.5 8.5h5M5.5 10.8h5M5.5 6.2h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <button id="addEventBtn" type="button" hidden class="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-md text-sm font-semibold font-display btn-primary transition-colors shrink-0">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span class="hidden sm:inline">הוספת אירוע</span>
+      </button>
+    </div>
   </div>
 
   <div class="flex items-center justify-end gap-3 flex-wrap px-4 md:px-6 py-2 border-t border-edge">
