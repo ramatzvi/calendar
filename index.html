@@ -431,9 +431,9 @@
 </div>
 
 <!-- Change log (visible only to LOG_VIEWERS) -->
-<div id="logModalBackdrop" hidden class="fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4" data-fade>
-  <div class="modal-card bg-surface rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" data-pop>
-    <div class="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+<div id="logModalBackdrop" hidden class="fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-3 sm:p-6" data-fade>
+  <div class="modal-card bg-surface rounded-2xl w-full h-full max-w-6xl max-h-[95vh] flex flex-col" data-pop>
+    <div class="flex items-center justify-between gap-3 px-5 pt-5 pb-3 border-b border-edge">
       <h3 class="font-display font-bold text-lg text-ink">יומן שינויים</h3>
       <button type="button" id="logCloseBtn" aria-label="סגירה" class="w-8 h-8 grid place-items-center rounded-md btn-ghost transition-colors">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -1563,10 +1563,9 @@
   }
 
   // clear_change_log() is a security-definer RPC: it re-checks
-  // is_log_viewer() itself (never trust the client-side gate alone), clears
-  // change_log, and best-effort fires a secret-gated request to also clear
-  // the Sheet (see docs/architecture.md — no Google OAuth scope needed for
-  // this, unlike the abandoned Apps-Script-side token verification).
+  // is_log_viewer() itself (never trust the client-side gate alone) before
+  // clearing change_log. The Sheet mirror is untouched by this — see
+  // docs/architecture.md.
   function clearChangeLogRequest() {
     return sb.rpc('clear_change_log');
   }
@@ -1599,14 +1598,14 @@
   function renderLogTable() {
     var body = document.getElementById('logBody');
     if (!logRows || !logRows.length) { body.textContent = 'היומן ריק.'; return; }
-    var html = '<table class="w-full text-start"><thead><tr class="border-b border-edge">' +
-      ['מתי', 'מי', 'מה'].map(function (h) { return '<th class="py-1.5 px-2 text-xs font-display font-semibold text-ink2">' + h + '</th>'; }).join('') +
+    var html = '<table class="w-full text-start border-collapse"><thead class="sticky top-0 bg-surface"><tr class="border-b-2 border-edge">' +
+      ['מתי', 'מי', 'מה'].map(function (h) { return '<th class="py-2.5 px-3 text-sm font-display font-semibold text-ink2 whitespace-nowrap">' + h + '</th>'; }).join('') +
       '</tr></thead><tbody>';
-    logRows.forEach(function (row) {
-      html += '<tr class="border-b border-edge">' +
-        '<td class="py-1.5 px-2 align-top">' + escapeHtml(new Date(row.happened_at).toLocaleString('he-IL')) + '</td>' +
-        '<td class="py-1.5 px-2 align-top">' + escapeHtml(row.who || '') + '</td>' +
-        '<td class="py-1.5 px-2 align-top">' + escapeHtml(row.what || '') + '</td>' +
+    logRows.forEach(function (row, i) {
+      html += '<tr class="border-b border-edge' + (i % 2 ? ' bg-black/[0.02]' : '') + '">' +
+        '<td class="py-2.5 px-3 align-top whitespace-nowrap text-ink2">' + escapeHtml(new Date(row.happened_at).toLocaleString('he-IL')) + '</td>' +
+        '<td class="py-2.5 px-3 align-top whitespace-nowrap">' + escapeHtml(row.who || '') + '</td>' +
+        '<td class="py-2.5 px-3 align-top">' + escapeHtml(row.what || '') + '</td>' +
         '</tr>';
     });
     html += '</tbody></table>';
