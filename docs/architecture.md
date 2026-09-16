@@ -73,8 +73,12 @@ headers). The form's `#evtAllDay` checkbox hides/clears `#timeFields`;
     needs no JS.
   - `#authSignedIn` (hidden by default) → `#authAvatar` (img), `#authName`
     (span), `#authViewOnly` (badge, shown when signed in but not an editor),
-    `#logLink` ("קובץ לוג", shown only for `canViewLog()` — see "Change log
-    viewer" below), `#signOutBtn` ("התנתקות")
+    `#signOutBtn` ("התנתקות")
+  - `#logLink` lives in the header's top row, not the auth row — a small
+    icon-only square button (document/log glyph) styled like `#addEventBtn`
+    (`btn-primary`) and placed immediately before it in the DOM, so in this
+    RTL layout it renders just to `#addEventBtn`'s right. Shown only for
+    `canViewLog()` — see "Change log viewer" below.
 - `renderAuthUI()` toggles those two blocks, fills avatar/name/badge, and also
   toggles `#addEventBtn`'s `hidden` (`!isEditor()`) — it's the one place that
   reacts to every auth state change.
