@@ -200,27 +200,26 @@ since they don't key off row content. See `CLAUDE.md` → "Supabase schema".
 
 ## Change log viewer ("קובץ לוג")
 
-`LOG_APPS_SCRIPT_URL` (same Web App the DB trigger posts to) and
-`LOG_VIEWERS` (`['adi.landshaft@gmail.com', 'ofir.landshaft@gmail.com']`) are
+`LOG_VIEWERS` (`['adi.landshaft@gmail.com', 'ofir.landshaft@gmail.com']`) is
 declared right after the Supabase client. `canViewLog()` is just
 `authState.signedIn && LOG_VIEWERS.indexOf(authState.email) !== -1` — a UI
-convenience that hides `#logLink`; the real gate is server-side (see below).
+convenience that hides `#logLink`; the real gate is Postgres RLS (see below).
 
 - `#logLink` in the header calls `openLogModal()`, which shows
   `#logModalBackdrop` and calls `loadLogIntoModal()`.
-- `fetchChangeLog()` / `clearChangeLogRequest()` POST
-  `{action: 'readLog'|'clearLog', accessToken: authState.accessToken}` to
-  `LOG_APPS_SCRIPT_URL` with `Content-Type: text/plain;charset=utf-8` (a
-  CORS-simple content type, so no preflight — Apps Script can't answer one).
-  `authState.accessToken` is `session.access_token` from Supabase Auth,
-  captured in `applySession()`.
-- The Apps Script verifies that token against Supabase's own
-  `/auth/v1/user` endpoint before doing anything — a client can't spoof this
-  by editing `index.html`, since it needs a real session for one of the two
-  allowed emails. See `CLAUDE.md` → "Viewing/clearing the log from the app".
-- `renderLogTable()` renders `logRows` (header + data, newest data row
-  first) as a plain HTML table, escaping every cell with the existing
-  `escapeHtml()`.
+- `fetchChangeLog()` is a plain `sb.from('change_log').select('happened_at,who,what').order(...)`
+  — RLS (`public.is_log_viewer()`) restricts the rows to only what a log
+  viewer is allowed to see; there's no Apps Script call involved at all.
+- `clearChangeLogRequest()` is `sb.rpc('clear_change_log')`, a Postgres RPC
+  that re-checks `is_log_viewer()` itself before deleting — a client can't
+  spoof this by editing `index.html`, same as every other RLS-gated action
+  in this app. See `CLAUDE.md` → "Viewing/clearing the log from the app" for
+  why this doesn't go through Apps Script (a dead end: anonymous-access Web
+  Apps can't get `UrlFetchApp` authorization, confirmed after extensive
+  testing).
+- `renderLogTable()` renders `logRows` (already newest-first from the
+  `order()` call) as a plain HTML table, escaping every cell with the
+  existing `escapeHtml()`.
 - `renderLogFooter()` toggles between the normal footer (מחק שינויים /
   סגירה) and a confirm-before-delete footer (ביטול / אישור מחיקה) — the
   same two-step pattern `renderViewFooter()` uses for deleting an event.

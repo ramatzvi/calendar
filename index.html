@@ -491,13 +491,11 @@
   var SUPABASE_KEY = 'sb_publishable_zcb1SwmWcKppK9XhZBngUA_VxEkifU-';
   var sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  // Change-log viewer ("קובץ לוג"): the same Apps Script Web App the DB
-  // trigger posts to (see log_event_change() in Supabase) also serves the
-  // read/clear actions below. Client-side gating here is only a UI
-  // convenience (hide the link from everyone else) — the real check is the
-  // Apps Script verifying the caller's actual Supabase session against
-  // Supabase itself, so it can't be spoofed by editing this file.
-  var LOG_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_Es3iHyxDdPJiE63cAoyvNclYcihJBULqsdf9mk4kP6ljbrSN0fOXF3j6ihfXTeF5/exec';
+  // Change-log viewer ("קובץ לוג"): reads/clears the change_log table (see
+  // "Change log viewer" in docs/architecture.md). This LOG_VIEWERS check is
+  // only a UI convenience to hide the link from everyone else — the real
+  // gate is Postgres RLS (public.is_log_viewer()), so it can't be spoofed
+  // by editing this file.
   var LOG_VIEWERS = ['adi.landshaft@gmail.com', 'ofir.landshaft@gmail.com'];
   function canViewLog() {
     return !!(authState.signedIn && authState.email && LOG_VIEWERS.indexOf(authState.email) !== -1);
@@ -552,10 +550,7 @@
   // refreshCanEdit); until it resolves it stays false, so the edit
   // controls only appear once membership is confirmed. The RLS policy is
   // still the real gate — this just keeps the UI honest.
-  // accessToken here is the app's own Supabase session token — used only to
-  // prove identity to the change-log Apps Script (see LOG_VIEWERS below), not
-  // for any Google API (that's a deliberately different, deprecated pattern).
-  var authState = { signedIn: false, email: null, name: null, picture: null, canEdit: false, accessToken: null };
+  var authState = { signedIn: false, email: null, name: null, picture: null, canEdit: false };
 
   function locationById(id) {
     for (var i = 0; i < LOCATIONS.length; i++) if (LOCATIONS[i].id === id) return LOCATIONS[i];
@@ -585,7 +580,6 @@
     authState.name = meta.full_name || meta.name || u.email || '';
     authState.picture = meta.avatar_url || meta.picture || '';
     authState.canEdit = false;
-    authState.accessToken = session.access_token || null;
     renderAuthUI();
     renderAll();
     refreshCanEdit(announce);
@@ -609,7 +603,7 @@
   }
 
   function clearSession() {
-    authState = { signedIn: false, email: null, name: null, picture: null, canEdit: false, accessToken: null };
+    authState = { signedIn: false, email: null, name: null, picture: null, canEdit: false };
     renderAuthUI();
     renderAll();
   }
@@ -1558,23 +1552,23 @@
   /* ---------------- CHANGE LOG MODAL ("קובץ לוג") ---------------- */
 
   var logBackdrop = document.getElementById('logModalBackdrop');
-  var logRows = null;          // last-fetched rows (header + data), newest data row first
+  var logRows = null;          // last-fetched change_log rows, newest first
   var confirmingClearLog = false;
 
+  // Reads straight from the change_log table (mirrored by a DB trigger on
+  // events, same as the Google Sheet audit trail) — protected by RLS
+  // (public.is_log_viewer()), not by anything client-side.
   function fetchChangeLog() {
-    return fetch(LOG_APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight Apps Script can't answer
-      body: JSON.stringify({ action: 'readLog', accessToken: authState.accessToken || '' }),
-    }).then(function (r) { return r.json(); });
+    return sb.from('change_log').select('happened_at,who,what').order('happened_at', { ascending: false });
   }
 
+  // clear_change_log() is a security-definer RPC: it re-checks
+  // is_log_viewer() itself (never trust the client-side gate alone), clears
+  // change_log, and best-effort fires a secret-gated request to also clear
+  // the Sheet (see docs/architecture.md — no Google OAuth scope needed for
+  // this, unlike the abandoned Apps-Script-side token verification).
   function clearChangeLogRequest() {
-    return fetch(LOG_APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'clearLog', accessToken: authState.accessToken || '' }),
-    }).then(function (r) { return r.json(); });
+    return sb.rpc('clear_change_log');
   }
 
   function openLogModal() {
@@ -1589,32 +1583,31 @@
   function loadLogIntoModal() {
     var body = document.getElementById('logBody');
     fetchChangeLog().then(function (res) {
-      if (res.error || !res.rows) {
-        body.textContent = 'לא ניתן לטעון את היומן' + (res.reason ? ' (' + res.reason + ')' : ' (אין הרשאה, או שגיאת רשת).');
-        console.error('logLink readLog failed:', res); // temporary debug aid
+      if (res.error) {
+        body.textContent = 'לא ניתן לטעון את היומן (אין הרשאה, או שגיאת רשת).';
+        console.error('logLink readLog failed:', res.error);
         return;
       }
-      logRows = res.rows;
+      logRows = res.data || [];
       renderLogTable();
     }).catch(function (err) {
       body.textContent = 'לא ניתן לטעון את היומן כרגע.';
-      console.error('logLink readLog network error:', err); // temporary debug aid
+      console.error('logLink readLog network error:', err);
     });
   }
 
   function renderLogTable() {
     var body = document.getElementById('logBody');
-    if (!logRows || logRows.length < 1) { body.textContent = 'אין נתונים.'; return; }
-    var header = logRows[0];
-    var dataRows = logRows.slice(1).slice().reverse(); // newest first
-    if (!dataRows.length) { body.textContent = 'היומן ריק.'; return; }
-    var html = '<table class="w-full text-start"><thead><tr class="border-b border-edge">';
-    header.forEach(function (h) { html += '<th class="py-1.5 px-2 text-xs font-display font-semibold text-ink2">' + escapeHtml(String(h)) + '</th>'; });
-    html += '</tr></thead><tbody>';
-    dataRows.forEach(function (row) {
-      html += '<tr class="border-b border-edge">';
-      row.forEach(function (cell) { html += '<td class="py-1.5 px-2 align-top">' + escapeHtml(String(cell)) + '</td>'; });
-      html += '</tr>';
+    if (!logRows || !logRows.length) { body.textContent = 'היומן ריק.'; return; }
+    var html = '<table class="w-full text-start"><thead><tr class="border-b border-edge">' +
+      ['מתי', 'מי', 'מה'].map(function (h) { return '<th class="py-1.5 px-2 text-xs font-display font-semibold text-ink2">' + h + '</th>'; }).join('') +
+      '</tr></thead><tbody>';
+    logRows.forEach(function (row) {
+      html += '<tr class="border-b border-edge">' +
+        '<td class="py-1.5 px-2 align-top">' + escapeHtml(new Date(row.happened_at).toLocaleString('he-IL')) + '</td>' +
+        '<td class="py-1.5 px-2 align-top">' + escapeHtml(row.who || '') + '</td>' +
+        '<td class="py-1.5 px-2 align-top">' + escapeHtml(row.what || '') + '</td>' +
+        '</tr>';
     });
     html += '</tbody></table>';
     body.innerHTML = html;
@@ -1633,18 +1626,18 @@
         footerEl.innerHTML = '<span class="text-xs font-body text-ink2">מוחק…</span>';
         clearChangeLogRequest().then(function (res) {
           confirmingClearLog = false;
-          if (res && res.ok) {
+          if (!res.error) {
             showToast('היומן נמחק.');
             loadLogIntoModal();
           } else {
-            showToast('המחיקה נכשלה' + (res && res.reason ? ' (' + res.reason + ')' : ' (אין הרשאה, או שגיאת רשת).'));
-            console.error('logLink clearLog failed:', res); // temporary debug aid
+            showToast('המחיקה נכשלה (אין הרשאה, או שגיאת רשת).');
+            console.error('logLink clearLog failed:', res.error);
             renderLogFooter();
           }
         }).catch(function (err) {
           confirmingClearLog = false;
           showToast('המחיקה נכשלה.');
-          console.error('logLink clearLog network error:', err); // temporary debug aid
+          console.error('logLink clearLog network error:', err);
           renderLogFooter();
         });
       });

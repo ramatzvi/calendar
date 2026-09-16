@@ -67,12 +67,13 @@ latest session. Full implementation detail for each lives in
 - **Access**: a guest (not signed in) sees a static "צפייה בלבד" badge; a
   signed-in non-editor sees the same badge via `refreshCanEdit()`, instead
   of only discovering it after a failed save.
-- **Change log**: every insert/update/delete on `events` is mirrored to a
-  Google Sheet — see "Change log (audit trail)" below. A "קובץ לוג" link next
-  to the signed-in user's name (visible only to `adi.landshaft@gmail.com` and
-  `ofir.landshaft@gmail.com`) opens a modal showing that sheet's rows, with a
-  "מחק שינויים" button to clear them — see "Change log (audit trail)" →
-  "Viewing/clearing the log from the app".
+- **Change log**: every insert/update/delete on `events` is mirrored both to
+  a Google Sheet and to a `change_log` table in Postgres — see "Change log
+  (audit trail)" below. A "קובץ לוג" link next to the signed-in user's name
+  (visible only to `adi.landshaft@gmail.com` and `ofir.landshaft@gmail.com`)
+  opens a modal showing the Postgres copy, with a "מחק שינויים" button to
+  clear it — see "Change log (audit trail)" → "Viewing/clearing the log
+  from the app".
 - **Locations** (9): בית העם, בית אופיר, חורשת נועם, מגרש, דשא מרכזי,
   מועדון, בית כנסת, השכרת ציוד, and `אחר` (reveals a free-text field).
 - **Month-view chips**: intentionally **no truncation** — a long title wraps
@@ -229,27 +230,42 @@ client-side would bring that back for every sign-in).
 
 ### Viewing/clearing the log from the app
 
-The same Apps Script Web App also answers two more actions from the browser,
-gated separately from the append path:
+The "קובץ לוג" link (visible only to `adi.landshaft@gmail.com` and
+`ofir.landshaft@gmail.com` — `LOG_VIEWERS` in `index.html`, a UI convenience
+only) reads and clears a **second copy of the log kept in Postgres**, not
+the Sheet directly:
 
-- `{action: 'readLog', accessToken}` → returns `{rows: [...]}` (header + all
-  data rows) from the sheet.
-- `{action: 'clearLog', accessToken}` → clears every row except the header.
+- `log_event_change()` (the same trigger described above) also does
+  `insert into change_log (who, what) values (actor, what)`, right before
+  the existing `net.http_post` to the Sheet — one trigger, two destinations,
+  same `what`/`who` text in both places.
+- `change_log` has RLS allowing `select` only to a `log_viewers` row match
+  (`public.is_log_viewer()`, same shape as `is_editor()`/`editors`) — no
+  insert/update/delete policy exists for any client role, so writes only
+  ever happen through the trigger (`insert`) and `clear_change_log()`
+  (`delete`), both `security definer`.
+- `clear_change_log()` is a Postgres RPC (`sb.rpc('clear_change_log')`) that
+  re-checks `is_log_viewer()` itself before deleting every row — the
+  client-side link being hidden is not what protects this.
+- The Sheet itself is **not** touched by "מחק שינויים" — it keeps
+  accumulating as before. Clear it manually in Google Sheets (select rows
+  2+, delete) if you want that too.
 
-Both are guarded by `verifyLogViewer(accessToken)` in the Apps Script, which
-calls Supabase's own `GET /auth/v1/user` with that token as a Bearer header
-and checks the returned email against `ALLOWED_LOG_VIEWERS`
-(`adi.landshaft@gmail.com`, `ofir.landshaft@gmail.com` — kept in sync with
-`LOG_VIEWERS` in `index.html`, which only hides/shows the link). This is a
-**deliberately different mechanism from `SHARED_SECRET`** — that secret must
-never be reused here, since it's embedded in `index.html` (public repo) and
-would let anyone read or clear the log, or spoof the `who` on a real append.
-Verifying an actual Supabase session token against Supabase itself can't be
-spoofed without a valid login as one of the two allowed emails.
-
-`authState.accessToken` in `index.html` is the app's own Supabase session
-token (`session.access_token`), used only to prove identity for this feature
-— not a Google API token, and not related to the old Sheets-scope OAuth flow.
+**Why not read/clear the Sheet directly from the browser?** That was the
+original design — the browser called the same Apps Script Web App the
+trigger posts to, verifying the caller's Supabase token against Supabase's
+`/auth/v1/user` before answering. It never worked: an Apps Script Web App
+deployed with anonymous access (`ANYONE_ANONYMOUS` — required so the
+Postgres trigger can call it without a Google login) appears to be
+permanently unable to get authorization for `UrlFetchApp` (the
+`.../auth/script.external_request` scope), no matter how many times you
+revoke/re-grant access, add explicit `oauthScopes` to the manifest, or
+create a brand-new deployment — confirmed by extensive testing in one
+session, all failing identically. Don't re-attempt that route without a new
+idea for getting around this; the Postgres-native `change_log` table sidesteps
+it entirely, since Postgres calling Apps Script (fire-and-forget, secret-gated)
+was always fine — it's the reverse direction (Apps Script calling out to
+Supabase) that's blocked.
 
 ## Syncing from the original roster Google Sheet
 
@@ -347,13 +363,21 @@ just-deployed fix — append `?nocache=123` when re-checking.
    `clearExtraTimeOptions()` removes that injected option again on the next
    modal open so it doesn't linger in the dropdown for a later add. Keep
    `addOneHour()`'s cap at `23:30` (the last option), not `23:59`.
-10. **The change-log Apps Script has two independent gates — don't merge
-    them.** The legacy append path (called by the Postgres trigger) checks
-    `SHARED_SECRET`; the newer `readLog`/`clearLog` actions (called from the
-    browser by "קובץ לוג") check a real Supabase access token via
-    `verifyLogViewer()` instead. Reusing `SHARED_SECRET` for the browser
-    actions would leak it (it'd have to live in `index.html`, a public repo)
-    and let anyone read/clear the log. Also: **editing the Apps Script's
-    code does not update the live Web App** — after changing it, you must
-    Deploy → Manage deployments → edit the existing deployment → "New
-    version" → Deploy, or the URL keeps serving the old code.
+10. **An Apps Script Web App deployed with anonymous access
+    (`ANYONE_ANONYMOUS`) cannot reliably get authorization for
+    `UrlFetchApp`** (the `.../auth/script.external_request` scope) — this
+    was tested extensively (revoke + re-grant account access, explicit
+    `oauthScopes` in the manifest, a brand-new deployment) and failed
+    identically every time. This is why the change-log viewer ("קובץ לוג")
+    reads/clears a Postgres `change_log` table instead of having the
+    browser call Apps Script directly — see "Viewing/clearing the log from
+    the app". Calling *out* from Apps Script (browser → Apps Script →
+    Supabase) is the blocked direction; calling *in* to Apps Script
+    (Postgres trigger → Apps Script, `SHARED_SECRET`-gated, SpreadsheetApp
+    only) has always worked fine and is unaffected.
+11. **Editing an Apps Script's code does not update the live Web App on its
+    own** — after changing it, you must Deploy → Manage deployments → edit
+    the existing deployment → "New version" → Deploy, or the URL keeps
+    serving the old code. (This part worked fine in the investigation above
+    — it was specifically the `UrlFetchApp` authorization that never took,
+    not the code deployment itself.)
