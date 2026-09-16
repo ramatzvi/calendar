@@ -76,9 +76,18 @@ headers). The form's `#evtAllDay` checkbox hides/clears `#timeFields`;
     `#signOutBtn` ("התנתקות")
   - `#logLink` lives in the header's top row, not the auth row — a small
     icon-only square button (document/log glyph) styled like `#addEventBtn`
-    (`btn-primary`) and placed immediately before it in the DOM, so in this
-    RTL layout it renders just to `#addEventBtn`'s right. Shown only for
-    `canViewLog()` — see "Change log viewer" below.
+    (`btn-primary`). Both buttons are wrapped together in one
+    `<div class="... ms-auto">` right after the view-tabs, placed before
+    `#addEventBtn` in the DOM so in this RTL layout `#logLink` renders just
+    to its right; `ms-auto` pins the pair to the trailing (left) edge of
+    whichever flex-wrap line they land on, instead of relying on the
+    parent's `justify-between` to do it (which only worked by coincidence
+    for some viewport widths — see git history if this regresses). On
+    narrow/mobile widths `#addEventBtn`'s label collapses to icon-only
+    (`<span class="hidden sm:inline">`) and its box shrinks to the same
+    `w-8 h-8` square as `#logLink` (`sm:w-auto sm:h-auto` restores the
+    labeled size at the `sm` breakpoint) so the two stay the same size.
+    Shown only for `canViewLog()` — see "Change log viewer" below.
 - `renderAuthUI()` toggles those two blocks, fills avatar/name/badge, and also
   toggles `#addEventBtn`'s `hidden` (`!isEditor()`) — it's the one place that
   reacts to every auth state change.

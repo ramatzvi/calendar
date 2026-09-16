@@ -69,8 +69,9 @@ latest session. Full implementation detail for each lives in
   of only discovering it after a failed save.
 - **Change log**: every insert/update/delete on `events` is mirrored both to
   a Google Sheet and to a `change_log` table in Postgres — see "Change log
-  (audit trail)" below. A "קובץ לוג" link next to the signed-in user's name
-  (visible only to `adi.landshaft@gmail.com` and `ofir.landshaft@gmail.com`)
+  (audit trail)" below. A small square icon button (document glyph, styled
+  like `#addEventBtn`) in the header's top row — immediately to its right,
+  visible only to `adi.landshaft@gmail.com` and `ofir.landshaft@gmail.com` —
   opens a separate popup window (not an in-page modal) showing the
   Postgres copy, oldest first, with a "מחק שינויים" button to clear it —
   see "Change log (audit trail)" → "Viewing/clearing the log from the
@@ -158,6 +159,42 @@ create policy "public read"    on events for select using (true);
 create policy "editors insert" on events for insert to authenticated with check (public.is_editor());
 create policy "editors update" on events for update to authenticated using (public.is_editor()) with check (public.is_editor());
 create policy "editors delete" on events for delete to authenticated using (public.is_editor());
+
+-- log_viewers/change_log: same pattern as editors/is_editor(), for the
+-- "קובץ לוג" feature — see "Change log (audit trail)" below for the full
+-- picture (the trigger that populates change_log, and clear_change_log()).
+create table log_viewers ( email text primary key );
+alter table log_viewers enable row level security;
+create policy "read own log_viewer row" on log_viewers for select to authenticated
+  using (email = (auth.jwt() ->> 'email'));
+insert into log_viewers (email) values
+  ('adi.landshaft@gmail.com'), ('ofir.landshaft@gmail.com');
+
+create function public.is_log_viewer() returns boolean
+  language sql security definer stable
+  set search_path = ''
+as $$ select exists (select 1 from public.log_viewers where email = auth.jwt() ->> 'email') $$;
+
+create table change_log (
+  id          uuid primary key default gen_random_uuid(),
+  happened_at timestamptz not null default now(),
+  who         text,
+  what        text
+);
+alter table change_log enable row level security;
+create policy "log viewers read" on change_log for select to authenticated
+  using (public.is_log_viewer());
+-- no insert/update/delete policy for any client role — see gotcha 12 for
+-- why clear_change_log() needs `where true` on its DELETE.
+create function public.clear_change_log() returns void
+  language plpgsql security definer
+  set search_path = ''
+as $$
+begin
+  if not public.is_log_viewer() then raise exception 'forbidden'; end if;
+  delete from public.change_log where true;
+end;
+$$;
 ```
 
 The `editors` email must match the signed-in user's Google address **exactly**
@@ -318,6 +355,16 @@ Actions run) to do its job.
 
 When testing on the live URL, GitHub Pages / browser caching can mask a
 just-deployed fix — append `?nocache=123` when re-checking.
+
+**The repo must stay public for the site to work.** GitHub Pages on a free
+personal account only serves *public* repos — a private repo needs GitHub
+Pro or higher. Switching the repo to private silently takes the live site
+down (confirmed live, 2026-09-16: `ramatzvi.github.io/calendar/` returned
+"Site not found" within seconds of flipping visibility). Switching back to
+public does **not** automatically bring it back either — GitHub also resets
+Settings → Pages → Source to "None" when Pages gets disabled this way; you
+have to go back in and re-select **Deploy from a branch → main → /(root)**
+and Save.
 
 ## Known gotchas (don't re-break these)
 
