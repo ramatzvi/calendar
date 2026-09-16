@@ -75,6 +75,12 @@ latest session. Full implementation detail for each lives in
   onto as many lines as it needs (no `line-clamp`), matching a reference
   calendar app the user shared. Cells grow taller for long titles,
   especially on narrow/mobile widths — an accepted tradeoff, not a bug.
+- **Type scale**: bumped a notch app-wide via CSS overrides of Tailwind's own
+  utility classes (`.text-xs`/`.text-sm`/etc. and the `text-[Npx]` arbitrary
+  sizes actually used) in the main `<style>` block, rather than editing every
+  `text-*` occurrence individually.
+- **Time fields**: `#evtStart`/`#evtEnd` are `<select>`s offering fixed
+  half-hour steps from `00:00`, not free-entry time inputs — see gotcha 9.
 
 ## Tech stack
 
@@ -273,3 +279,10 @@ just-deployed fix — append `?nocache=123` when re-checking.
    `'DELETE'`) — it's unambiguous and doesn't depend on column nullability.
    Also: `to_char()` has no overload for the `time` type — use
    `left(x::text, 5)` to get `HH:MM` from a `time` column, not `to_char(x, ...)`.
+9. **`#evtStart`/`#evtEnd` are `<select>`s with 48 fixed half-hour options**
+   (`00:00`…`23:30`), not `<input type="time">` anymore. An event whose time
+   isn't on that grid (older/imported data) needs `ensureTimeOption()` called
+   *before* setting `.value`, or the select silently lands on no selection.
+   `clearExtraTimeOptions()` removes that injected option again on the next
+   modal open so it doesn't linger in the dropdown for a later add. Keep
+   `addOneHour()`'s cap at `23:30` (the last option), not `23:59`.

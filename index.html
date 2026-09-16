@@ -230,6 +230,20 @@
     padding-left: 32px;
     padding-right: 10px;
   }
+
+  /* A slightly larger base type scale. Overriding Tailwind's own utility
+     classes here (rather than editing every text-* occurrence in the file)
+     keeps this a one-place tweak — !important because the Tailwind Play
+     CDN injects its stylesheet dynamically and isn't guaranteed to land
+     earlier in the cascade than this block. */
+  .text-\[10px\] { font-size: 11px !important; }
+  .text-\[11px\] { font-size: 12px !important; }
+  .text-\[13px\] { font-size: 14px !important; }
+  .text-xs   { font-size: 13px !important; }
+  .text-sm   { font-size: 15px !important; }
+  .text-base { font-size: 17px !important; }
+  .text-lg   { font-size: 19px !important; }
+  .text-xl   { font-size: 21px !important; }
 </style>
 </head>
 <body>
@@ -326,11 +340,11 @@
         <div id="timeFields" class="grid grid-cols-2 gap-3">
           <div class="flex flex-col gap-1">
             <label for="evtStart" class="text-xs font-semibold font-display text-ink2">שעת התחלה</label>
-            <input id="evtStart" type="time" class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
+            <select id="evtStart" class="field-input rounded-md px-3 py-2 text-sm font-mono tabular"><option value="00:00">00:00</option><option value="00:30">00:30</option><option value="01:00">01:00</option><option value="01:30">01:30</option><option value="02:00">02:00</option><option value="02:30">02:30</option><option value="03:00">03:00</option><option value="03:30">03:30</option><option value="04:00">04:00</option><option value="04:30">04:30</option><option value="05:00">05:00</option><option value="05:30">05:30</option><option value="06:00">06:00</option><option value="06:30">06:30</option><option value="07:00">07:00</option><option value="07:30">07:30</option><option value="08:00">08:00</option><option value="08:30">08:30</option><option value="09:00">09:00</option><option value="09:30">09:30</option><option value="10:00">10:00</option><option value="10:30">10:30</option><option value="11:00">11:00</option><option value="11:30">11:30</option><option value="12:00">12:00</option><option value="12:30">12:30</option><option value="13:00">13:00</option><option value="13:30">13:30</option><option value="14:00">14:00</option><option value="14:30">14:30</option><option value="15:00">15:00</option><option value="15:30">15:30</option><option value="16:00">16:00</option><option value="16:30">16:30</option><option value="17:00">17:00</option><option value="17:30">17:30</option><option value="18:00">18:00</option><option value="18:30">18:30</option><option value="19:00">19:00</option><option value="19:30">19:30</option><option value="20:00">20:00</option><option value="20:30">20:30</option><option value="21:00">21:00</option><option value="21:30">21:30</option><option value="22:00">22:00</option><option value="22:30">22:30</option><option value="23:00">23:00</option><option value="23:30">23:30</option></select>
           </div>
           <div class="flex flex-col gap-1">
             <label for="evtEnd" class="text-xs font-semibold font-display text-ink2">שעת סיום</label>
-            <input id="evtEnd" type="time" class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
+            <select id="evtEnd" class="field-input rounded-md px-3 py-2 text-sm font-mono tabular"><option value="00:00">00:00</option><option value="00:30">00:30</option><option value="01:00">01:00</option><option value="01:30">01:30</option><option value="02:00">02:00</option><option value="02:30">02:30</option><option value="03:00">03:00</option><option value="03:30">03:30</option><option value="04:00">04:00</option><option value="04:30">04:30</option><option value="05:00">05:00</option><option value="05:30">05:30</option><option value="06:00">06:00</option><option value="06:30">06:30</option><option value="07:00">07:00</option><option value="07:30">07:30</option><option value="08:00">08:00</option><option value="08:30">08:30</option><option value="09:00">09:00</option><option value="09:30">09:30</option><option value="10:00">10:00</option><option value="10:30">10:30</option><option value="11:00">11:00</option><option value="11:30">11:30</option><option value="12:00">12:00</option><option value="12:30">12:30</option><option value="13:00">13:00</option><option value="13:30">13:30</option><option value="14:00">14:00</option><option value="14:30">14:30</option><option value="15:00">15:00</option><option value="15:30">15:30</option><option value="16:00">16:00</option><option value="16:30">16:30</option><option value="17:00">17:00</option><option value="17:30">17:30</option><option value="18:00">18:00</option><option value="18:30">18:30</option><option value="19:00">19:00</option><option value="19:30">19:30</option><option value="20:00">20:00</option><option value="20:30">20:30</option><option value="21:00">21:00</option><option value="21:30">21:30</option><option value="22:00">22:00</option><option value="22:30">22:30</option><option value="23:00">23:00</option><option value="23:30">23:30</option></select>
           </div>
         </div>
         <p id="timeError" hidden class="text-xs font-body text-[var(--danger)] -mt-2">שעת הסיום חייבת להיות אחרי שעת ההתחלה.</p>
@@ -1157,6 +1171,8 @@
     document.getElementById('formModalTitle').textContent = 'הוספת אירוע';
     document.getElementById('formSubmitBtn').textContent = 'הוספת אירוע';
     eventForm.reset();
+    clearExtraTimeOptions('evtStart');
+    clearExtraTimeOptions('evtEnd');
     document.getElementById('evtDate').disabled = false;
     document.getElementById('dateBulkHint').hidden = true;
     document.getElementById('evtDate').value = dateKey;
@@ -1197,6 +1213,10 @@
     // them all to one date — the hint explains that.
     document.getElementById('dateBulkHint').hidden = state.editScope === 'this';
     document.getElementById('evtAllDay').checked = !ev.start;
+    clearExtraTimeOptions('evtStart');
+    clearExtraTimeOptions('evtEnd');
+    ensureTimeOption('evtStart', ev.start);
+    ensureTimeOption('evtEnd', ev.end);
     document.getElementById('evtStart').value = ev.start || '';
     document.getElementById('evtEnd').value = ev.end || '';
     updateAllDayToggle();
@@ -1216,8 +1236,36 @@
   }
 
   function addOneHour(hhmm) {
-    var m = Math.min(minutesOf(hhmm) + 60, 23 * 60 + 59);
+    // Capped at 23:30, not 23:59 — evtEnd is now a half-hour-step <select>,
+    // and 23:30 is its last option.
+    var m = Math.min(minutesOf(hhmm) + 60, 23 * 60 + 30);
     return pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+  }
+
+  // #evtStart/#evtEnd only offer the 48 half-hour slots. An older event
+  // (e.g. imported historical data) can have an off-grid time like 09:15 —
+  // add it as one extra option so opening it for edit shows its real time
+  // instead of silently landing on no selection.
+  function ensureTimeOption(selectId, value) {
+    var sel = document.getElementById(selectId);
+    if (!value) return;
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === value) return;
+    }
+    var opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = value;
+    opt.dataset.extra = '1';
+    sel.appendChild(opt);
+  }
+
+  // Removes any off-grid option(s) ensureTimeOption previously injected,
+  // so they don't linger in the list once that event isn't being edited.
+  function clearExtraTimeOptions(selectId) {
+    var sel = document.getElementById(selectId);
+    for (var i = sel.options.length - 1; i >= 0; i--) {
+      if (sel.options[i].dataset.extra) sel.remove(i);
+    }
   }
 
   function closeFormModal() { formBackdrop.hidden = true; }
