@@ -205,11 +205,21 @@ declared right after the Supabase client. `canViewLog()` is just
 `authState.signedIn && LOG_VIEWERS.indexOf(authState.email) !== -1` — a UI
 convenience that hides `#logLink`; the real gate is Postgres RLS (see below).
 
-- `#logLink` in the header calls `openLogModal()`, which shows
-  `#logModalBackdrop` and calls `loadLogIntoModal()`.
-- `fetchChangeLog()` is a plain `sb.from('change_log').select('happened_at,who,what').order(...)`
-  — RLS (`public.is_log_viewer()`) restricts the rows to only what a log
-  viewer is allowed to see; there's no Apps Script call involved at all.
+This opens as a **real separate popup window**, not an in-page modal (the
+user asked for it to feel like its own full document, not a small dialog).
+`openLogModal()` calls `window.open('', 'ramatZviChangeLog', ...)`
+**synchronously** inside the click handler — before any `fetch`/`sb` call —
+so browsers don't treat it as a blocked popup; `LOG_WINDOW_HTML` (a
+self-contained HTML string with its own `<style>`, no Tailwind) is written
+into it via `document.write()`, then filled in asynchronously. Clicking the
+link again while the window is still open just `.focus()`es it and
+re-fetches, instead of opening a second one (same `logWin` reference, same
+window name).
+
+- `fetchChangeLog()` is a plain `sb.from('change_log').select('happened_at,who,what').order('happened_at', {ascending: true})`
+  (oldest first) — RLS (`public.is_log_viewer()`) restricts the rows to only
+  what a log viewer is allowed to see; there's no Apps Script call involved
+  at all.
 - `clearChangeLogRequest()` is `sb.rpc('clear_change_log')`, a Postgres RPC
   that re-checks `is_log_viewer()` itself before deleting — a client can't
   spoof this by editing `index.html`, same as every other RLS-gated action
@@ -217,11 +227,13 @@ convenience that hides `#logLink`; the real gate is Postgres RLS (see below).
   why this doesn't go through Apps Script (a dead end: anonymous-access Web
   Apps can't get `UrlFetchApp` authorization, confirmed after extensive
   testing).
-- `renderLogTable()` renders `logRows` (already newest-first from the
-  `order()` call) as a plain HTML table, escaping every cell with the
-  existing `escapeHtml()`.
-- `renderLogFooter()` toggles between the normal footer (מחק שינויים /
-  סגירה) and a confirm-before-delete footer (ביטול / אישור מחיקה) — the
+- `renderLogTable()`/`renderLogFooter()` render into `logWin.document`
+  (not the main page's `document`) — every DOM call in this feature is
+  guarded by `if (!logWin || logWin.closed) return;` since the popup can be
+  closed by the user at any point, including mid-fetch.
+- `renderLogFooter()` toggles between the normal footer (just מחק שינויים —
+  closing the window is the OS window chrome's job, no "סגירה" button
+  needed) and a confirm-before-delete footer (ביטול / אישור מחיקה) — the
   same two-step pattern `renderViewFooter()` uses for deleting an event.
   Confirming calls `clearChangeLogRequest()` then reloads the table.
 

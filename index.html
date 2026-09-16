@@ -430,20 +430,6 @@
   </div>
 </div>
 
-<!-- Change log (visible only to LOG_VIEWERS) -->
-<div id="logModalBackdrop" hidden class="fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-3 sm:p-6" data-fade>
-  <div class="modal-card bg-surface rounded-2xl w-full h-full max-w-6xl max-h-[95vh] flex flex-col" data-pop>
-    <div class="flex items-center justify-between gap-3 px-5 pt-5 pb-3 border-b border-edge">
-      <h3 class="font-display font-bold text-lg text-ink">יומן שינויים</h3>
-      <button type="button" id="logCloseBtn" aria-label="סגירה" class="w-8 h-8 grid place-items-center rounded-md btn-ghost transition-colors">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-      </button>
-    </div>
-    <div id="logBody" class="px-5 pb-2 flex-1 min-h-0 overflow-auto text-sm font-body">טוען…</div>
-    <div id="logFooter" class="flex items-center justify-end gap-2 px-5 py-4 border-t border-edge"></div>
-  </div>
-</div>
-
 <div id="toast" hidden class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 toast text-sm font-body font-medium px-4 py-2.5 rounded-lg shadow-lg" data-pop></div>
 
 <script>
@@ -1551,15 +1537,46 @@
 
   /* ---------------- CHANGE LOG MODAL ("קובץ לוג") ---------------- */
 
-  var logBackdrop = document.getElementById('logModalBackdrop');
-  var logRows = null;          // last-fetched change_log rows, newest first
+  // The log opens in a real, separate popup window (not an in-page modal)
+  // so it reads like its own full-screen document. The window is opened
+  // SYNCHRONOUSLY inside the click handler (before any async fetch) so
+  // browsers don't treat it as a blocked popup; it's filled in afterward.
+  var logWin = null;
+  var logRows = null;          // last-fetched change_log rows, oldest first
   var confirmingClearLog = false;
+
+  var LOG_WINDOW_HTML = '<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="utf-8">' +
+    '<title>יומן שינויים — רמת צבי</title>' +
+    '<link rel="preconnect" href="https://fonts.googleapis.com">' +
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@600;700&family=IBM+Plex+Sans+Hebrew:wght@400;500;600&display=swap">' +
+    '<style>' +
+    ':root{--surface:#FFFFFF;--ink:#1B2030;--ink2:#636B7E;--accent:#4A5AE8;--accentink:#FFFFFF;--border:#DEE3ED;--danger:#D0304A;--dangerink:#FFFFFF}' +
+    '@media (prefers-color-scheme: dark){:root{--surface:#181B27;--ink:#E8E9F2;--ink2:#9AA0B6;--accent:#8993FF;--accentink:#10121B;--border:#2B2F3F;--danger:#FF6B7F;--dangerink:#2A0B10}}' +
+    '*{box-sizing:border-box}' +
+    'body{margin:0;background:var(--surface);color:var(--ink);font-family:"IBM Plex Sans Hebrew",ui-sans-serif,system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}' +
+    'header{padding:16px 20px;border-bottom:1px solid var(--border);font-family:Heebo,sans-serif;font-weight:700;font-size:18px}' +
+    'main{flex:1;overflow:auto;padding:0 20px}' +
+    'table{width:100%;border-collapse:collapse;font-size:14px}' +
+    'thead th{position:sticky;top:0;background:var(--surface);text-align:start;padding:10px 12px;border-bottom:2px solid var(--border);color:var(--ink2);font-family:Heebo,sans-serif;font-weight:600;white-space:nowrap}' +
+    'tbody td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}' +
+    'tbody tr:nth-child(even){background:rgba(0,0,0,0.02)}' +
+    'footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--border)}' +
+    'button{font-family:Heebo,sans-serif;font-weight:600;font-size:14px;padding:8px 14px;border-radius:8px;border:none;cursor:pointer}' +
+    '.btn-primary{background:var(--accent);color:var(--accentink)}' +
+    '.btn-danger{background:var(--danger);color:var(--dangerink)}' +
+    '.btn-ghost{background:transparent;color:var(--ink2)}' +
+    '.hint{font-size:13px;color:var(--ink2);margin-inline-end:auto}' +
+    '</style></head><body>' +
+    '<header>יומן שינויים</header>' +
+    '<main><div id="logBody" style="padding:16px 0;">טוען…</div></main>' +
+    '<footer id="logFooter"></footer>' +
+    '</body></html>';
 
   // Reads straight from the change_log table (mirrored by a DB trigger on
   // events, same as the Google Sheet audit trail) — protected by RLS
   // (public.is_log_viewer()), not by anything client-side.
   function fetchChangeLog() {
-    return sb.from('change_log').select('happened_at,who,what').order('happened_at', { ascending: false });
+    return sb.from('change_log').select('happened_at,who,what').order('happened_at', { ascending: true });
   }
 
   // clear_change_log() is a security-definer RPC: it re-checks
@@ -1573,15 +1590,26 @@
   function openLogModal() {
     if (!canViewLog()) return;
     confirmingClearLog = false;
-    document.getElementById('logBody').textContent = 'טוען…';
+    if (logWin && !logWin.closed) {
+      logWin.focus();
+      loadLogIntoModal();
+      return;
+    }
+    logWin = window.open('', 'ramatZviChangeLog', 'width=1100,height=720');
+    if (!logWin) { showToast('הדפדפן חסם את פתיחת החלון — יש לאשר חלונות קופצים לאתר.'); return; }
+    logWin.document.open();
+    logWin.document.write(LOG_WINDOW_HTML);
+    logWin.document.close();
+    logWin.addEventListener('beforeunload', function () { logWin = null; });
     renderLogFooter();
-    logBackdrop.hidden = false;
     loadLogIntoModal();
   }
 
   function loadLogIntoModal() {
-    var body = document.getElementById('logBody');
+    if (!logWin || logWin.closed) return;
+    var body = logWin.document.getElementById('logBody');
     fetchChangeLog().then(function (res) {
+      if (!logWin || logWin.closed) return;
       if (res.error) {
         body.textContent = 'לא ניתן לטעון את היומן (אין הרשאה, או שגיאת רשת).';
         console.error('logLink readLog failed:', res.error);
@@ -1590,22 +1618,24 @@
       logRows = res.data || [];
       renderLogTable();
     }).catch(function (err) {
+      if (!logWin || logWin.closed) return;
       body.textContent = 'לא ניתן לטעון את היומן כרגע.';
       console.error('logLink readLog network error:', err);
     });
   }
 
   function renderLogTable() {
-    var body = document.getElementById('logBody');
+    if (!logWin || logWin.closed) return;
+    var body = logWin.document.getElementById('logBody');
     if (!logRows || !logRows.length) { body.textContent = 'היומן ריק.'; return; }
-    var html = '<table class="w-full text-start border-collapse"><thead class="sticky top-0 bg-surface"><tr class="border-b-2 border-edge">' +
-      ['מתי', 'מי', 'מה'].map(function (h) { return '<th class="py-2.5 px-3 text-sm font-display font-semibold text-ink2 whitespace-nowrap">' + h + '</th>'; }).join('') +
+    var html = '<table><thead><tr>' +
+      ['מתי', 'מי', 'מה'].map(function (h) { return '<th>' + h + '</th>'; }).join('') +
       '</tr></thead><tbody>';
-    logRows.forEach(function (row, i) {
-      html += '<tr class="border-b border-edge' + (i % 2 ? ' bg-black/[0.02]' : '') + '">' +
-        '<td class="py-2.5 px-3 align-top whitespace-nowrap text-ink2">' + escapeHtml(new Date(row.happened_at).toLocaleString('he-IL')) + '</td>' +
-        '<td class="py-2.5 px-3 align-top whitespace-nowrap">' + escapeHtml(row.who || '') + '</td>' +
-        '<td class="py-2.5 px-3 align-top">' + escapeHtml(row.what || '') + '</td>' +
+    logRows.forEach(function (row) {
+      html += '<tr>' +
+        '<td>' + escapeHtml(new Date(row.happened_at).toLocaleString('he-IL')) + '</td>' +
+        '<td>' + escapeHtml(row.who || '') + '</td>' +
+        '<td>' + escapeHtml(row.what || '') + '</td>' +
         '</tr>';
     });
     html += '</tbody></table>';
@@ -1613,16 +1643,17 @@
   }
 
   function renderLogFooter() {
-    var footer = document.getElementById('logFooter');
+    if (!logWin || logWin.closed) return;
+    var footer = logWin.document.getElementById('logFooter');
     if (confirmingClearLog) {
       footer.innerHTML =
-        '<span class="text-xs font-body text-ink2 me-auto self-center">למחוק את כל השורות ביומן?</span>' +
-        '<button type="button" id="logCancelClear" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-ghost transition-colors">ביטול</button>' +
-        '<button type="button" id="logConfirmClear" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-danger transition-colors">אישור מחיקה</button>';
-      document.getElementById('logCancelClear').addEventListener('click', function () { confirmingClearLog = false; renderLogFooter(); });
-      document.getElementById('logConfirmClear').addEventListener('click', function () {
-        var footerEl = document.getElementById('logFooter');
-        footerEl.innerHTML = '<span class="text-xs font-body text-ink2">מוחק…</span>';
+        '<span class="hint">למחוק את כל השורות ביומן?</span>' +
+        '<button type="button" id="logCancelClear" class="btn-ghost">ביטול</button>' +
+        '<button type="button" id="logConfirmClear" class="btn-danger">אישור מחיקה</button>';
+      logWin.document.getElementById('logCancelClear').addEventListener('click', function () { confirmingClearLog = false; renderLogFooter(); });
+      logWin.document.getElementById('logConfirmClear').addEventListener('click', function () {
+        var footerEl = logWin.document.getElementById('logFooter');
+        footerEl.innerHTML = '<span class="hint">מוחק…</span>';
         clearChangeLogRequest().then(function (res) {
           confirmingClearLog = false;
           if (!res.error) {
@@ -1631,8 +1662,8 @@
           } else {
             showToast('המחיקה נכשלה (אין הרשאה, או שגיאת רשת).');
             console.error('logLink clearLog failed:', res.error);
-            renderLogFooter();
           }
+          renderLogFooter();
         }).catch(function (err) {
           confirmingClearLog = false;
           showToast('המחיקה נכשלה.');
@@ -1641,19 +1672,12 @@
         });
       });
     } else {
-      footer.innerHTML =
-        '<button type="button" id="logClearBtn" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-danger transition-colors me-auto">מחק שינויים</button>' +
-        '<button type="button" id="logCloseBtn2" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-primary transition-colors">סגירה</button>';
-      document.getElementById('logClearBtn').addEventListener('click', function () { confirmingClearLog = true; renderLogFooter(); });
-      document.getElementById('logCloseBtn2').addEventListener('click', closeLogModal);
+      footer.innerHTML = '<button type="button" id="logClearBtn" class="btn-danger" style="margin-inline-end:auto">מחק שינויים</button>';
+      logWin.document.getElementById('logClearBtn').addEventListener('click', function () { confirmingClearLog = true; renderLogFooter(); });
     }
   }
 
-  function closeLogModal() { logBackdrop.hidden = true; confirmingClearLog = false; }
-
   document.getElementById('logLink').addEventListener('click', function (e) { e.preventDefault(); openLogModal(); });
-  document.getElementById('logCloseBtn').addEventListener('click', closeLogModal);
-  logBackdrop.addEventListener('click', function (e) { if (e.target === logBackdrop) closeLogModal(); });
 
   function parseDateKey(key) {
     var p = key.split('-');

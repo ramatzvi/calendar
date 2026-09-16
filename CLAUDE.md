@@ -71,9 +71,10 @@ latest session. Full implementation detail for each lives in
   a Google Sheet and to a `change_log` table in Postgres — see "Change log
   (audit trail)" below. A "קובץ לוג" link next to the signed-in user's name
   (visible only to `adi.landshaft@gmail.com` and `ofir.landshaft@gmail.com`)
-  opens a modal showing the Postgres copy, with a "מחק שינויים" button to
-  clear it — see "Change log (audit trail)" → "Viewing/clearing the log
-  from the app".
+  opens a separate popup window (not an in-page modal) showing the
+  Postgres copy, oldest first, with a "מחק שינויים" button to clear it —
+  see "Change log (audit trail)" → "Viewing/clearing the log from the
+  app".
 - **Locations** (9): בית העם, בית אופיר, חורשת נועם, מגרש, דשא מרכזי,
   מועדון, בית כנסת, השכרת ציוד, and `אחר` (reveals a free-text field).
 - **Month-view chips**: intentionally **no truncation** — a long title wraps
