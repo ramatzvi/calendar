@@ -81,6 +81,13 @@ latest session. Full implementation detail for each lives in
   `text-*` occurrence individually.
 - **Time fields**: `#evtStart`/`#evtEnd` are `<select>`s offering fixed
   half-hour steps from `00:00`, not free-entry time inputs — see gotcha 9.
+- **Live-update polling is adaptive, not a fixed interval**: 120s while the
+  tab is visible during the day (07:00–21:59, each viewer's own local
+  clock), 600s at night, and paused entirely while the tab is hidden
+  (`document.hidden`/`visibilitychange`) — with an immediate refresh the
+  moment a hidden tab becomes visible again, instead of waiting out
+  whatever was left of the interval. See `scheduleNextPoll()`/
+  `pollDelayMs()` in `docs/architecture.md`.
 
 ## Tech stack
 
@@ -215,6 +222,32 @@ client-side would bring that back for every sign-in).
 - A bulk operation (recurring add, or an edit/delete scoped to "following"/
   "all") fires the trigger once per affected row, so it logs one line per
   occurrence — that's intentional, not a bug.
+
+## Syncing from the original roster Google Sheet
+
+Ofir's community keeps its own working roster in a Google Sheet ("Copy of
+לוח ארועים - רמת צבי") — the one originally CSV-imported to seed `events`
+(see the parser notes: monthly tabs, a date-number row then up to a few
+event rows per week, one cell per weekday). **The file ID changes** —
+Ofir re-copies it periodically and gives the new ID when he wants a
+resync, so don't assume the last-used ID is still current; ask if unsure.
+
+Repeatable process for "check what's changed and sync it":
+1. Read the sheet via the Drive connector's `read_file_content` (fileId
+   from Ofir) — same monthly-grid format as before.
+2. Diff month-by-month against the last-known transcription (if the
+   scratchpad copy from a prior sync still exists) or against a fresh
+   read of the relevant date ranges from Supabase (public REST + the
+   publishable key is enough — read-only).
+3. Present the diff as **add / remove** lists (date, title, and whichever
+   fields changed) — never write anything without Ofir explicitly saying
+   what to apply. He may only want some of the differences applied.
+4. Applying it needs write access, which the assistant doesn't have (the
+   publishable key is read-only under RLS) — hand Ofir the exact SQL
+   (`insert into events (...)` / `delete from events where id = ...`) to
+   run himself in the Supabase SQL editor, then verify via the REST API
+   (and the change-log Sheet, which will show `who: system` for anything
+   run this way) afterward.
 
 ## Google OAuth setup (for reference)
 
