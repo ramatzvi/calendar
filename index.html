@@ -1591,12 +1591,14 @@
     fetchChangeLog().then(function (res) {
       if (res.error || !res.rows) {
         body.textContent = 'לא ניתן לטעון את היומן (אין הרשאה, או שגיאת רשת).';
+        console.error('logLink readLog failed:', res); // temporary debug aid
         return;
       }
       logRows = res.rows;
       renderLogTable();
-    }).catch(function () {
+    }).catch(function (err) {
       body.textContent = 'לא ניתן לטעון את היומן כרגע.';
+      console.error('logLink readLog network error:', err); // temporary debug aid
     });
   }
 
