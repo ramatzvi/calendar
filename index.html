@@ -1605,8 +1605,28 @@
   state.events = seedEvents();
   setView('month');
   loadEvents();
-  // Keep the calendar in sync with what other people add/edit/delete.
-  setInterval(loadEvents, 120000);
+
+  // Keep the calendar in sync with what other people add/edit/delete —
+  // adaptively: 120s during the day, 600s at night (each viewer's own
+  // local clock — fine for a single-timezone community), and paused
+  // entirely while the tab isn't visible (no point polling a backgrounded
+  // tab). Coming back to a hidden tab triggers an immediate refresh
+  // instead of waiting out whatever was left of the last interval.
+  var pollTimer = null;
+  function pollDelayMs() {
+    var hour = new Date().getHours();
+    return (hour >= 7 && hour < 22) ? 120000 : 600000;
+  }
+  function scheduleNextPoll() {
+    clearTimeout(pollTimer);
+    if (document.hidden) return; // resumed by the visibilitychange handler below
+    pollTimer = setTimeout(function () { loadEvents().then(scheduleNextPoll); }, pollDelayMs());
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) clearTimeout(pollTimer);
+    else loadEvents().then(scheduleNextPoll);
+  });
+  scheduleNextPoll();
 
   // Auth: pick up an existing session, and react to the sign-in redirect
   // completing, the hourly token refresh, and sign-out (here or in

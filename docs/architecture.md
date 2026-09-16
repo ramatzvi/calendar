@@ -187,10 +187,15 @@ since they don't key off row content. See `CLAUDE.md` → "Supabase schema".
   `isEditor()`.
 - On load: `state.events = seedEvents()` (instant paint) → `setView('month')` →
   `loadEvents()` (replaces with real data — an empty table just renders an empty
-  calendar) → `setInterval(loadEvents, 120000)` (light polling — every 2 minutes —
-  so other people's edits show up without a manual refresh; other viewers see a
-  change within that window, not instantly). Realtime subscriptions are available
-  in Supabase but not used yet — polling is enough.
+  calendar) → adaptive polling so other people's edits show up without a manual
+  refresh: `scheduleNextPoll()` self-reschedules via `setTimeout` (not
+  `setInterval`) at `pollDelayMs()` — 120s during the day (07:00–21:59, by each
+  viewer's own local clock) or 600s at night (22:00–06:59) — and a
+  `visibilitychange` listener clears the pending timer while the tab is hidden
+  (`document.hidden`) and fires an immediate `loadEvents()` + resumes the cycle
+  the moment it's visible again, instead of leaving a backgrounded tab polling
+  uselessly or making the user wait out a stale interval on return. Realtime
+  subscriptions are available in Supabase but not used yet — polling is enough.
 
 ## Seed / fallback data
 
