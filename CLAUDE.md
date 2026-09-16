@@ -381,3 +381,9 @@ just-deployed fix — append `?nocache=123` when re-checking.
     serving the old code. (This part worked fine in the investigation above
     — it was specifically the `UrlFetchApp` authorization that never took,
     not the code deployment itself.)
+12. **This Supabase project rejects a bare `DELETE`/`UPDATE` with no `WHERE`
+    clause** (`ERROR 21000: DELETE requires a WHERE clause` — Postgres's
+    `pg_safeupdate`-style protection). `clear_change_log()` needs
+    `delete from public.change_log where true`, not a bare `delete from
+    public.change_log`. Keep this in mind for any future "clear a whole
+    table" function.
