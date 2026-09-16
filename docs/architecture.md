@@ -73,7 +73,8 @@ headers). The form's `#evtAllDay` checkbox hides/clears `#timeFields`;
     needs no JS.
   - `#authSignedIn` (hidden by default) → `#authAvatar` (img), `#authName`
     (span), `#authViewOnly` (badge, shown when signed in but not an editor),
-    `#signOutBtn` ("התנתקות")
+    `#logLink` ("קובץ לוג", shown only for `canViewLog()` — see "Change log
+    viewer" below), `#signOutBtn` ("התנתקות")
 - `renderAuthUI()` toggles those two blocks, fills avatar/name/badge, and also
   toggles `#addEventBtn`'s `hidden` (`!isEditor()`) — it's the one place that
   reacts to every auth state change.
@@ -196,6 +197,34 @@ since they don't key off row content. See `CLAUDE.md` → "Supabase schema".
   the moment it's visible again, instead of leaving a backgrounded tab polling
   uselessly or making the user wait out a stale interval on return. Realtime
   subscriptions are available in Supabase but not used yet — polling is enough.
+
+## Change log viewer ("קובץ לוג")
+
+`LOG_APPS_SCRIPT_URL` (same Web App the DB trigger posts to) and
+`LOG_VIEWERS` (`['adi.landshaft@gmail.com', 'ofir.landshaft@gmail.com']`) are
+declared right after the Supabase client. `canViewLog()` is just
+`authState.signedIn && LOG_VIEWERS.indexOf(authState.email) !== -1` — a UI
+convenience that hides `#logLink`; the real gate is server-side (see below).
+
+- `#logLink` in the header calls `openLogModal()`, which shows
+  `#logModalBackdrop` and calls `loadLogIntoModal()`.
+- `fetchChangeLog()` / `clearChangeLogRequest()` POST
+  `{action: 'readLog'|'clearLog', accessToken: authState.accessToken}` to
+  `LOG_APPS_SCRIPT_URL` with `Content-Type: text/plain;charset=utf-8` (a
+  CORS-simple content type, so no preflight — Apps Script can't answer one).
+  `authState.accessToken` is `session.access_token` from Supabase Auth,
+  captured in `applySession()`.
+- The Apps Script verifies that token against Supabase's own
+  `/auth/v1/user` endpoint before doing anything — a client can't spoof this
+  by editing `index.html`, since it needs a real session for one of the two
+  allowed emails. See `CLAUDE.md` → "Viewing/clearing the log from the app".
+- `renderLogTable()` renders `logRows` (header + data, newest data row
+  first) as a plain HTML table, escaping every cell with the existing
+  `escapeHtml()`.
+- `renderLogFooter()` toggles between the normal footer (מחק שינויים /
+  סגירה) and a confirm-before-delete footer (ביטול / אישור מחיקה) — the
+  same two-step pattern `renderViewFooter()` uses for deleting an event.
+  Confirming calls `clearChangeLogRequest()` then reloads the table.
 
 ## Seed / fallback data
 

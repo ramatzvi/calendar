@@ -68,7 +68,11 @@ latest session. Full implementation detail for each lives in
   signed-in non-editor sees the same badge via `refreshCanEdit()`, instead
   of only discovering it after a failed save.
 - **Change log**: every insert/update/delete on `events` is mirrored to a
-  Google Sheet — see "Change log (audit trail)" below.
+  Google Sheet — see "Change log (audit trail)" below. A "קובץ לוג" link next
+  to the signed-in user's name (visible only to `adi.landshaft@gmail.com` and
+  `ofir.landshaft@gmail.com`) opens a modal showing that sheet's rows, with a
+  "מחק שינויים" button to clear them — see "Change log (audit trail)" →
+  "Viewing/clearing the log from the app".
 - **Locations** (9): בית העם, בית אופיר, חורשת נועם, מגרש, דשא מרכזי,
   מועדון, בית כנסת, השכרת ציוד, and `אחר` (reveals a free-text field).
 - **Month-view chips**: intentionally **no truncation** — a long title wraps
@@ -223,6 +227,30 @@ client-side would bring that back for every sign-in).
   "all") fires the trigger once per affected row, so it logs one line per
   occurrence — that's intentional, not a bug.
 
+### Viewing/clearing the log from the app
+
+The same Apps Script Web App also answers two more actions from the browser,
+gated separately from the append path:
+
+- `{action: 'readLog', accessToken}` → returns `{rows: [...]}` (header + all
+  data rows) from the sheet.
+- `{action: 'clearLog', accessToken}` → clears every row except the header.
+
+Both are guarded by `verifyLogViewer(accessToken)` in the Apps Script, which
+calls Supabase's own `GET /auth/v1/user` with that token as a Bearer header
+and checks the returned email against `ALLOWED_LOG_VIEWERS`
+(`adi.landshaft@gmail.com`, `ofir.landshaft@gmail.com` — kept in sync with
+`LOG_VIEWERS` in `index.html`, which only hides/shows the link). This is a
+**deliberately different mechanism from `SHARED_SECRET`** — that secret must
+never be reused here, since it's embedded in `index.html` (public repo) and
+would let anyone read or clear the log, or spoof the `who` on a real append.
+Verifying an actual Supabase session token against Supabase itself can't be
+spoofed without a valid login as one of the two allowed emails.
+
+`authState.accessToken` in `index.html` is the app's own Supabase session
+token (`session.access_token`), used only to prove identity for this feature
+— not a Google API token, and not related to the old Sheets-scope OAuth flow.
+
 ## Syncing from the original roster Google Sheet
 
 Ofir's community keeps its own working roster in a Google Sheet ("Copy of
@@ -319,3 +347,13 @@ just-deployed fix — append `?nocache=123` when re-checking.
    `clearExtraTimeOptions()` removes that injected option again on the next
    modal open so it doesn't linger in the dropdown for a later add. Keep
    `addOneHour()`'s cap at `23:30` (the last option), not `23:59`.
+10. **The change-log Apps Script has two independent gates — don't merge
+    them.** The legacy append path (called by the Postgres trigger) checks
+    `SHARED_SECRET`; the newer `readLog`/`clearLog` actions (called from the
+    browser by "קובץ לוג") check a real Supabase access token via
+    `verifyLogViewer()` instead. Reusing `SHARED_SECRET` for the browser
+    actions would leak it (it'd have to live in `index.html`, a public repo)
+    and let anyone read/clear the log. Also: **editing the Apps Script's
+    code does not update the live Web App** — after changing it, you must
+    Deploy → Manage deployments → edit the existing deployment → "New
+    version" → Deploy, or the URL keeps serving the old code.

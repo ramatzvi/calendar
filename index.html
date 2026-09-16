@@ -298,6 +298,7 @@
         <img id="authAvatar" class="w-6 h-6 rounded-full" alt="">
         <span id="authName" class="hidden sm:inline text-xs font-body text-ink2"></span>
         <span id="authViewOnly" hidden class="text-[11px] font-body text-ink2 border border-edge rounded px-1.5 py-0.5">צפייה בלבד</span>
+        <a id="logLink" href="#" hidden class="text-xs font-body text-ink2 hover:text-accent underline underline-offset-2 decoration-dotted cursor-pointer">קובץ לוג</a>
         <button id="signOutBtn" type="button" class="text-xs font-body text-ink2 hover:text-accent underline underline-offset-2 decoration-dotted">התנתקות</button>
       </div>
     </div>
@@ -429,6 +430,20 @@
   </div>
 </div>
 
+<!-- Change log (visible only to LOG_VIEWERS) -->
+<div id="logModalBackdrop" hidden class="fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4" data-fade>
+  <div class="modal-card bg-surface rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" data-pop>
+    <div class="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+      <h3 class="font-display font-bold text-lg text-ink">יומן שינויים</h3>
+      <button type="button" id="logCloseBtn" aria-label="סגירה" class="w-8 h-8 grid place-items-center rounded-md btn-ghost transition-colors">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div id="logBody" class="px-5 pb-2 flex-1 min-h-0 overflow-auto text-sm font-body">טוען…</div>
+    <div id="logFooter" class="flex items-center justify-end gap-2 px-5 py-4 border-t border-edge"></div>
+  </div>
+</div>
+
 <div id="toast" hidden class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 toast text-sm font-body font-medium px-4 py-2.5 rounded-lg shadow-lg" data-pop></div>
 
 <script>
@@ -475,6 +490,18 @@
   var SUPABASE_URL = 'https://slsfqlgtthqgkiysywdz.supabase.co';
   var SUPABASE_KEY = 'sb_publishable_zcb1SwmWcKppK9XhZBngUA_VxEkifU-';
   var sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  // Change-log viewer ("קובץ לוג"): the same Apps Script Web App the DB
+  // trigger posts to (see log_event_change() in Supabase) also serves the
+  // read/clear actions below. Client-side gating here is only a UI
+  // convenience (hide the link from everyone else) — the real check is the
+  // Apps Script verifying the caller's actual Supabase session against
+  // Supabase itself, so it can't be spoofed by editing this file.
+  var LOG_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_Es3iHyxDdPJiE63cAoyvNclYcihJBULqsdf9mk4kP6ljbrSN0fOXF3j6ihfXTeF5/exec';
+  var LOG_VIEWERS = ['adi.landshaft@gmail.com', 'ofir.landshaft@gmail.com'];
+  function canViewLog() {
+    return !!(authState.signedIn && authState.email && LOG_VIEWERS.indexOf(authState.email) !== -1);
+  }
 
   function seedEvents() {
     return [
@@ -525,7 +552,10 @@
   // refreshCanEdit); until it resolves it stays false, so the edit
   // controls only appear once membership is confirmed. The RLS policy is
   // still the real gate — this just keeps the UI honest.
-  var authState = { signedIn: false, email: null, name: null, picture: null, canEdit: false };
+  // accessToken here is the app's own Supabase session token — used only to
+  // prove identity to the change-log Apps Script (see LOG_VIEWERS below), not
+  // for any Google API (that's a deliberately different, deprecated pattern).
+  var authState = { signedIn: false, email: null, name: null, picture: null, canEdit: false, accessToken: null };
 
   function locationById(id) {
     for (var i = 0; i < LOCATIONS.length; i++) if (LOCATIONS[i].id === id) return LOCATIONS[i];
@@ -555,6 +585,7 @@
     authState.name = meta.full_name || meta.name || u.email || '';
     authState.picture = meta.avatar_url || meta.picture || '';
     authState.canEdit = false;
+    authState.accessToken = session.access_token || null;
     renderAuthUI();
     renderAll();
     refreshCanEdit(announce);
@@ -578,7 +609,7 @@
   }
 
   function clearSession() {
-    authState = { signedIn: false, email: null, name: null, picture: null, canEdit: false };
+    authState = { signedIn: false, email: null, name: null, picture: null, canEdit: false, accessToken: null };
     renderAuthUI();
     renderAll();
   }
@@ -613,6 +644,7 @@
       inEl.hidden = true;
     }
     document.getElementById('addEventBtn').hidden = !isEditor();
+    document.getElementById('logLink').hidden = !canViewLog();
   }
 
   function setSyncStatus(msg) {
@@ -1522,6 +1554,110 @@
   function closeViewModal() { viewBackdrop.hidden = true; confirmingDeleteId = null; confirmingEditId = null; }
   document.getElementById('viewCloseBtn').addEventListener('click', closeViewModal);
   viewBackdrop.addEventListener('click', function (e) { if (e.target === viewBackdrop) closeViewModal(); });
+
+  /* ---------------- CHANGE LOG MODAL ("קובץ לוג") ---------------- */
+
+  var logBackdrop = document.getElementById('logModalBackdrop');
+  var logRows = null;          // last-fetched rows (header + data), newest data row first
+  var confirmingClearLog = false;
+
+  function fetchChangeLog() {
+    return fetch(LOG_APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight Apps Script can't answer
+      body: JSON.stringify({ action: 'readLog', accessToken: authState.accessToken || '' }),
+    }).then(function (r) { return r.json(); });
+  }
+
+  function clearChangeLogRequest() {
+    return fetch(LOG_APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'clearLog', accessToken: authState.accessToken || '' }),
+    }).then(function (r) { return r.json(); });
+  }
+
+  function openLogModal() {
+    if (!canViewLog()) return;
+    confirmingClearLog = false;
+    document.getElementById('logBody').textContent = 'טוען…';
+    renderLogFooter();
+    logBackdrop.hidden = false;
+    loadLogIntoModal();
+  }
+
+  function loadLogIntoModal() {
+    var body = document.getElementById('logBody');
+    fetchChangeLog().then(function (res) {
+      if (res.error || !res.rows) {
+        body.textContent = 'לא ניתן לטעון את היומן (אין הרשאה, או שגיאת רשת).';
+        return;
+      }
+      logRows = res.rows;
+      renderLogTable();
+    }).catch(function () {
+      body.textContent = 'לא ניתן לטעון את היומן כרגע.';
+    });
+  }
+
+  function renderLogTable() {
+    var body = document.getElementById('logBody');
+    if (!logRows || logRows.length < 1) { body.textContent = 'אין נתונים.'; return; }
+    var header = logRows[0];
+    var dataRows = logRows.slice(1).slice().reverse(); // newest first
+    if (!dataRows.length) { body.textContent = 'היומן ריק.'; return; }
+    var html = '<table class="w-full text-start"><thead><tr class="border-b border-edge">';
+    header.forEach(function (h) { html += '<th class="py-1.5 px-2 text-xs font-display font-semibold text-ink2">' + escapeHtml(String(h)) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    dataRows.forEach(function (row) {
+      html += '<tr class="border-b border-edge">';
+      row.forEach(function (cell) { html += '<td class="py-1.5 px-2 align-top">' + escapeHtml(String(cell)) + '</td>'; });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  }
+
+  function renderLogFooter() {
+    var footer = document.getElementById('logFooter');
+    if (confirmingClearLog) {
+      footer.innerHTML =
+        '<span class="text-xs font-body text-ink2 me-auto self-center">למחוק את כל השורות ביומן?</span>' +
+        '<button type="button" id="logCancelClear" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-ghost transition-colors">ביטול</button>' +
+        '<button type="button" id="logConfirmClear" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-danger transition-colors">אישור מחיקה</button>';
+      document.getElementById('logCancelClear').addEventListener('click', function () { confirmingClearLog = false; renderLogFooter(); });
+      document.getElementById('logConfirmClear').addEventListener('click', function () {
+        var footerEl = document.getElementById('logFooter');
+        footerEl.innerHTML = '<span class="text-xs font-body text-ink2">מוחק…</span>';
+        clearChangeLogRequest().then(function (res) {
+          confirmingClearLog = false;
+          if (res && res.ok) {
+            showToast('היומן נמחק.');
+            loadLogIntoModal();
+          } else {
+            showToast('המחיקה נכשלה (אין הרשאה, או שגיאת רשת).');
+            renderLogFooter();
+          }
+        }).catch(function () {
+          confirmingClearLog = false;
+          showToast('המחיקה נכשלה.');
+          renderLogFooter();
+        });
+      });
+    } else {
+      footer.innerHTML =
+        '<button type="button" id="logClearBtn" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-danger transition-colors me-auto">מחק שינויים</button>' +
+        '<button type="button" id="logCloseBtn2" class="px-3.5 py-2 rounded-md text-sm font-semibold font-display btn-primary transition-colors">סגירה</button>';
+      document.getElementById('logClearBtn').addEventListener('click', function () { confirmingClearLog = true; renderLogFooter(); });
+      document.getElementById('logCloseBtn2').addEventListener('click', closeLogModal);
+    }
+  }
+
+  function closeLogModal() { logBackdrop.hidden = true; confirmingClearLog = false; }
+
+  document.getElementById('logLink').addEventListener('click', function (e) { e.preventDefault(); openLogModal(); });
+  document.getElementById('logCloseBtn').addEventListener('click', closeLogModal);
+  logBackdrop.addEventListener('click', function (e) { if (e.target === logBackdrop) closeLogModal(); });
 
   function parseDateKey(key) {
     var p = key.split('-');
