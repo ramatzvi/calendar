@@ -185,6 +185,22 @@
   }
   .field-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
 
+  /* Native <input type="date"> renders its text in whatever format the
+     BROWSER's own UI language uses (e.g. mm/dd/yyyy for an en-US Chrome),
+     ignoring this page's lang="he" / dir="rtl" entirely — confirmed there is
+     no per-element override. So evtDate/evtRecurUntil are the real (but
+     invisible) native input, stacked over a decorative dd/mm/yyyy read-out
+     kept in sync by syncDateDisplay(); see openAddModal/openEditModal.
+     pointer-events:none on the real input hands mouse clicks to the
+     .date-input-wrap listener instead (see wireDateInputPicker()), which
+     calls .focus() + .showPicker() explicitly — Chrome only opens the
+     picker on a direct click of its (now invisible) calendar-icon glyph,
+     not anywhere else in the field, so relying on the native click target
+     is unreliable once the input is visually hidden. */
+  .date-input-wrap { cursor: pointer; }
+  .date-input-real { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; margin: 0; padding: 0; pointer-events: none; }
+  .date-input-real:focus + .date-input-display { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+
   .btn-primary { background: var(--accent); color: var(--accent-ink); }
   .btn-primary:hover { filter: brightness(1.06); }
   .btn-danger { background: var(--danger); color: var(--danger-ink); }
@@ -338,7 +354,10 @@
 
         <div class="flex flex-col gap-1">
           <label for="evtDate" class="text-xs font-semibold font-display text-ink2">תאריך</label>
-          <input id="evtDate" type="date" required class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
+          <div class="relative date-input-wrap">
+            <input id="evtDate" type="date" required class="field-input date-input-real">
+            <div id="evtDateDisplay" class="field-input date-input-display rounded-md px-3 py-2 text-sm font-mono tabular pointer-events-none">dd/mm/yyyy</div>
+          </div>
           <p id="dateBulkHint" hidden class="text-[11px] font-body text-ink2">שינוי התאריך יזיז את כל האירועים הנבחרים באותו מספר ימים (התאריכים היחסיים ביניהם נשמרים).</p>
         </div>
 
@@ -375,7 +394,10 @@
             </div>
             <div class="flex flex-col gap-1">
               <label for="evtRecurUntil" class="text-xs font-semibold font-display text-ink2">חוזר עד (כולל)</label>
-              <input id="evtRecurUntil" type="date" class="field-input rounded-md px-3 py-2 text-sm font-mono tabular">
+              <div class="relative date-input-wrap">
+                <input id="evtRecurUntil" type="date" class="field-input date-input-real">
+                <div id="evtRecurUntilDisplay" class="field-input date-input-display rounded-md px-3 py-2 text-sm font-mono tabular pointer-events-none">dd/mm/yyyy</div>
+              </div>
             </div>
           </div>
           <p id="recurError" hidden class="text-xs font-body text-[var(--danger)] -mt-2"></p>
@@ -1182,6 +1204,33 @@
     document.getElementById('recurError').hidden = true;
   }
 
+  // Keeps a native <input type="date">'s decorative dd/mm/yyyy sibling
+  // (see .date-input-real in the <style> block) in sync with its real,
+  // invisible ISO value — call after any programmatic `.value =` write, and
+  // on the real input's own 'input' event for user interaction.
+  function syncDateDisplay(id) {
+    var input = document.getElementById(id);
+    var display = document.getElementById(id + 'Display');
+    var iso = input.value;
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    display.textContent = m ? (m[3] + '/' + m[2] + '/' + m[1]) : 'dd/mm/yyyy';
+    display.classList.toggle('text-ink2', !m);
+  }
+  document.getElementById('evtDate').addEventListener('input', function () { syncDateDisplay('evtDate'); });
+  document.getElementById('evtRecurUntil').addEventListener('input', function () { syncDateDisplay('evtRecurUntil'); });
+
+  // See .date-input-wrap in the <style> block — the real date input has
+  // pointer-events:none, so a click anywhere in the field is handled here.
+  function wireDateInputPicker(inputId) {
+    var input = document.getElementById(inputId);
+    input.closest('.date-input-wrap').addEventListener('click', function () {
+      input.focus();
+      if (input.showPicker) { try { input.showPicker(); } catch (e) { /* e.g. disabled input */ } }
+    });
+  }
+  wireDateInputPicker('evtDate');
+  wireDateInputPicker('evtRecurUntil');
+
   function openAddModal(dateKey, startTime) {
     if (!isEditor()) { showToast('רק עורכים מורשים יכולים להוסיף אירועים.'); return; }
     state.editingId = null;
@@ -1196,6 +1245,7 @@
     document.getElementById('evtDate').disabled = false;
     document.getElementById('dateBulkHint').hidden = true;
     document.getElementById('evtDate').value = dateKey;
+    syncDateDisplay('evtDate');
     document.getElementById('evtAllDay').checked = false;
     document.getElementById('evtStart').value = startTime || '09:00';
     document.getElementById('evtEnd').value = addOneHour(startTime || '09:00');
@@ -1205,6 +1255,7 @@
     // picker opens on the right day instead of on today.
     document.getElementById('evtRecurUntil').value = dateKey;
     document.getElementById('evtRecurUntil').min = dateKey;
+    syncDateDisplay('evtRecurUntil');
     populateLocationSelect();
     updateSwatch();
     updateAllDayToggle();
@@ -1228,6 +1279,7 @@
     document.getElementById('evtTitle').value = ev.title;
     document.getElementById('evtDate').value = ev.date;
     document.getElementById('evtDate').disabled = false;
+    syncDateDisplay('evtDate');
     // For a bulk scope, changing the date shifts every affected occurrence
     // by the same number of days (see shiftSeriesDates) rather than moving
     // them all to one date — the hint explains that.
@@ -1437,7 +1489,10 @@
     var startVal = this.value;
     var untilInput = document.getElementById('evtRecurUntil');
     untilInput.min = startVal;
-    if (untilInput.value && untilInput.value < startVal) untilInput.value = startVal;
+    if (untilInput.value && untilInput.value < startVal) {
+      untilInput.value = startVal;
+      syncDateDisplay('evtRecurUntil');
+    }
   });
   document.getElementById('evtLocation').addEventListener('change', function () {
     updateSwatch();
