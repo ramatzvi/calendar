@@ -435,3 +435,16 @@ and Save.
     `delete from public.change_log where true`, not a bare `delete from
     public.change_log`. Keep this in mind for any future "clear a whole
     table" function.
+13. **Native `<input type="date">` renders in the *browser's* UI language,
+    not the page's `lang="he"`** — an en-US Chrome showed `mm/dd/yyyy` even
+    though everything else is RTL Hebrew, and there's no per-element
+    override for this. `#evtDate`/`#evtRecurUntil` are now the real
+    (ISO-valued) input made invisible (`pointer-events:none`), stacked under
+    a decorative `dd/mm/yyyy` read-out (`.date-input-display`) kept in sync
+    by `syncDateDisplay(id)` — call it after every programmatic `.value =`
+    write to either field, same as the existing calls in
+    `openAddModal`/`openEditModal`/the recur-until-min listener. Clicks are
+    handled by `wireDateInputPicker()` on the wrapping `.date-input-wrap`
+    (`.focus()` + `.showPicker()`), since Chrome only opens the native
+    picker on a direct click of the calendar-icon glyph, which is no longer
+    visible/clickable on its own.
