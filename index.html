@@ -1775,9 +1775,10 @@
     });
   }
 
-  function showBackupDone(url, rows) {
+  function showBackupDone(url, rows, moved) {
     var el = document.getElementById('toast');
-    el.innerHTML = 'הגיבוי הושלם (' + rows + ' אירועים) — ' +
+    el.innerHTML = 'הגיבוי הושלם (' + rows + ' אירועים)' +
+      (moved === false ? ', אך לא הועבר לתיקיית CalendarBackup' : '') + ' — ' +
       '<a href="' + escapeAttr(url) + '" target="_blank" rel="noopener" class="underline font-bold">פתיחת הקובץ</a>';
     el.hidden = false;
     clearTimeout(toastTimer);
@@ -1798,7 +1799,7 @@
       var out = null;
       try { out = JSON.parse(r.content); } catch (e) { /* not JSON (e.g. a redirect page) */ }
       if (out && out.ok && out.url) {
-        showBackupDone(out.url, out.rows);
+        showBackupDone(out.url, out.rows, out.moved);
       } else if (r.status_code >= 200 && r.status_code < 400) {
         showToast('הגיבוי נשלח — הקובץ נשמר ב-Drive.');
       } else {

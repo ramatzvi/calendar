@@ -318,8 +318,13 @@ re-checks `is_log_viewer()`): selects events with `date` between
 audit trail, as `{secret, action:'backupEvents', who, from, to, events:[…]}`.
 (posting to the v3 deployment `…xIq7Z…`, see gotcha 13). The Apps Script
 (`handleBackup`, SpreadsheetApp only — no UrlFetchApp) runs as its owner
-and creates `גיבוי לוח אירועים רמת צבי <yyyy-MM-dd HH-mm>` in that account's
-Drive root with two tabs:
+and creates `גיבוי לוח אירועים רמת צבי <yyyy-MM-dd HH-mm>`, then moves it
+(`DriveApp…moveTo`) into the Drive folder **CalendarBackup**
+(`BACKUP_FOLDER_ID = 1d9uSpCHoqFutdU20ogu_x_bF8LfbgNwK`). The move needs the
+`https://www.googleapis.com/auth/drive` scope (added to `oauthScopes` in the
+manifest and authorized by running `authorizeAndCheckFolder()` once in the
+editor); if it fails the backup still succeeds, the file stays in My Drive
+root, the response has `moved:false` and the toast says so. Two tabs:
 - `events` — header row = exactly the `public.events` column names (`id,
   title, date, start_time, end_time, location, description, series_id,
   updated_at, created_by`), one event per row, **all cells plain text**
