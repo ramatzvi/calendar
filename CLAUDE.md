@@ -78,7 +78,7 @@ latest session. Full implementation detail for each lives in
   app".
 - **Backup**: a floppy-with-sync-arrows icon button (`#backupBtn`, next to the
   log button, same two emails only) saves every event from one month before
-  the click to one year ahead into a **new Google Sheet in Ofir's Drive** —
+  the click to one year ahead into a **new Google Sheet in the Drive of the account that owns the Apps Script (`ramatzvi2022`)** —
   see "Backup to Google Sheet" below.
 - **Locations** (9): בית העם, בית אופיר, חורשת נועם, מגרש, דשא מרכזי,
   מועדון, בית כנסת, השכרת ציוד, and `אחר` (reveals a free-text field).
@@ -316,8 +316,9 @@ re-checks `is_log_viewer()`): selects events with `date` between
 (today − 1 month) and (today + 1 year) (Israel date), and sends them with
 `net.http_post` to the **same Apps Script webhook + `SHARED_SECRET`** as the
 audit trail, as `{secret, action:'backupEvents', who, from, to, events:[…]}`.
-The Apps Script (`handleBackup`, SpreadsheetApp only — no UrlFetchApp) runs
-as Ofir and creates `גיבוי לוח אירועים רמת צבי <yyyy-MM-dd HH-mm>` in his
+(posting to the v3 deployment `…xIq7Z…`, see gotcha 13). The Apps Script
+(`handleBackup`, SpreadsheetApp only — no UrlFetchApp) runs as its owner
+and creates `גיבוי לוח אירועים רמת צבי <yyyy-MM-dd HH-mm>` in that account's
 Drive root with two tabs:
 - `events` — header row = exactly the `public.events` column names (`id,
   title, date, start_time, end_time, location, description, series_id,
@@ -333,9 +334,9 @@ Drive root with two tabs:
 `backup_result(id)` (reads `net._http_response`, also viewer-gated) every 2s
 for up to 60s and shows a toast with a link to the new sheet. If pg_net
 didn't follow Apps Script's 302 and the content isn't JSON, a 2xx status
-still gets a generic "saved to Drive" toast. The file lands in **Ofir's**
-Drive even when Adi clicks (the script runs as the deployer); sharing it
-with Adi would need Drive scopes we haven't added.
+still gets a generic "saved to Drive" toast. The file lands in the script
+owner's Drive no matter who clicks (the script runs as the deployer);
+sharing it with others would need Drive scopes we haven't added.
 
 ## Syncing from the original roster Google Sheet
 
@@ -467,9 +468,14 @@ and Save.
     `delete from public.change_log where true`, not a bare `delete from
     public.change_log`. Keep this in mind for any future "clear a whole
     table" function.
-13. **Editing the Apps Script requires "Manage deployments → pencil on the
-    deployment whose URL the Postgres functions use → New version".** The
-    URL baked into `log_event_change()`/`backup_events()` ends in
-    `…zAyda0aeuByQ_ey2axHgJ0H9bxBwF9jYmogFw_k2iH-1haeCLAxg2M9HGe2imPo8Tp/exec`;
-    other deployments created while debugging UrlFetchApp (URLs ending
-    `…z_Es3i…`, `…wiWVO…`, `…xIq7Z…`) are unused leftovers and can be archived.
+13. **Two Apps Script deployments are in use, and an edit only reaches the
+    one you push "New version" to** (Manage deployments → pencil → New
+    version). `log_event_change()` (audit trail) posts to the original
+    `…zAyda0aeuByQ_ey2axHgJ0H9bxBwF9jYmogFw_k2iH-1haeCLAxg2M9HGe2imPo8Tp/exec`
+    (still the old append-only code — fine). `backup_events()` posts to
+    `…xIq7Z7MNsXEk30yS2tni0R-yzutxiuvXOWRP2cD6JCyM8oe6dTD4ni_2WvwHVDpQTh/exec`,
+    which runs the v3 script (append + `backupEvents`). The script project
+    is under the `ramatzvi2022` Google account (project named "לוג"), so
+    backup sheets are created in **that** account's Drive. Other leftover
+    deployments (`…z_Es3i…`, `…wiWVO…`) are unused. If the audit trail's
+    script is ever changed, remember `zAyda0` needs its own New version.
