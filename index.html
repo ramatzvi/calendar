@@ -295,31 +295,45 @@
     </div>
 
     <div class="flex items-center gap-2 shrink-0 ms-auto">
-      <button id="logLink" type="button" hidden aria-label="קובץ לוג" title="קובץ לוג" class="w-8 h-8 grid place-items-center rounded-md btn-primary transition-colors shrink-0">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M4.5 2h4l3 3v8a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-          <path d="M8.5 2v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-          <path d="M5.5 8.5h5M5.5 10.8h5M5.5 6.2h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-        </svg>
-      </button>
-      <button id="backupBtn" type="button" hidden aria-label="גיבוי אירועים ל-Google Sheet" title="גיבוי אירועים ל-Google Sheet" class="w-8 h-8 grid place-items-center rounded-md btn-primary transition-colors shrink-0">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 21V4a1 1 0 0 1 1-1h10.2a1 1 0 0 1 .7.3l3.8 3.8a1 1 0 0 1 .3.7V9"/>
-          <path d="M7 3v5h6V3"/>
-          <path d="M3 21h5"/>
-          <path d="M20.2 16.2a4.4 4.4 0 0 0-7.9-1.2"/>
-          <path d="M12.3 12.8l0 2.4 2.4 0"/>
-          <path d="M12.8 19.8a4.4 4.4 0 0 0 7.9-1.2"/>
-          <path d="M20.7 21.2l0-2.4-2.4 0"/>
-        </svg>
-      </button>
-      <button id="restoreBtn" type="button" hidden aria-label="שחזור אירועים מגיבוי" title="שחזור אירועים מגיבוי" class="w-8 h-8 grid place-items-center rounded-md btn-primary transition-colors shrink-0">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/>
-          <path d="M3.5 4.5v4.2h4.2"/>
-          <path d="M12 7.5V12l3 2"/>
-        </svg>
-      </button>
+      <div id="adminMenuWrap" hidden class="relative shrink-0">
+        <button id="adminMenuBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="ניהול" title="ניהול" class="flex items-center justify-center gap-1.5 h-8 min-w-8 px-2 sm:px-3 rounded-md border border-edge text-sm font-semibold font-display text-ink hover:bg-surfacealt transition-colors">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span class="hidden sm:inline">ניהול</span>
+        </button>
+        <div id="adminMenu" hidden role="menu" class="absolute left-0 top-full mt-1 z-30 min-w-[12rem] rounded-lg border border-edge bg-surface shadow-lg p-1 flex flex-col">
+          <button id="logLink" type="button" role="menuitem" class="admin-item flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-body text-ink text-start hover:bg-surfacealt transition-colors">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M4.5 2h4l3 3v8a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+              <path d="M8.5 2v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+              <path d="M5.5 8.5h5M5.5 10.8h5M5.5 6.2h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+            יומן שינויים
+          </button>
+          <button id="backupBtn" type="button" role="menuitem" class="admin-item flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-body text-ink text-start hover:bg-surfacealt transition-colors">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 21V4a1 1 0 0 1 1-1h10.2a1 1 0 0 1 .7.3l3.8 3.8a1 1 0 0 1 .3.7V9"/>
+              <path d="M7 3v5h6V3"/>
+              <path d="M3 21h5"/>
+              <path d="M20.2 16.2a4.4 4.4 0 0 0-7.9-1.2"/>
+              <path d="M12.3 12.8l0 2.4 2.4 0"/>
+              <path d="M12.8 19.8a4.4 4.4 0 0 0 7.9-1.2"/>
+              <path d="M20.7 21.2l0-2.4-2.4 0"/>
+            </svg>
+            גיבוי ל-Google Sheet
+          </button>
+          <button id="restoreBtn" type="button" role="menuitem" class="admin-item flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-body text-ink text-start hover:bg-surfacealt transition-colors">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/>
+              <path d="M3.5 4.5v4.2h4.2"/>
+              <path d="M12 7.5V12l3 2"/>
+            </svg>
+            שחזור מגיבוי
+          </button>
+        </div>
+      </div>
       <button id="addEventBtn" type="button" hidden class="w-8 h-8 sm:w-auto sm:h-auto grid sm:flex place-items-center sm:gap-1 sm:px-3 sm:py-1.5 rounded-md text-sm font-semibold font-display btn-primary transition-colors shrink-0">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         <span class="hidden sm:inline">הוספת אירוע</span>
@@ -686,9 +700,8 @@
       inEl.hidden = true;
     }
     document.getElementById('addEventBtn').hidden = !isEditor();
-    document.getElementById('logLink').hidden = !canViewLog();
-    document.getElementById('backupBtn').hidden = !canViewLog();
-    document.getElementById('restoreBtn').hidden = !canViewLog();
+    document.getElementById('adminMenuWrap').hidden = !canViewLog();
+    if (!canViewLog()) closeAdminMenu();
   }
 
   function setSyncStatus(msg) {
@@ -1777,6 +1790,28 @@
     }
   }
 
+  /* ---------------- ADMIN MENU ("ניהול") ---------------- */
+
+  // One header button holding the three admin tools (log / backup / restore),
+  // visible only to LOG_VIEWERS (see renderAuthUI). Each item keeps its own
+  // id and click handler below; clicking any item just also closes the menu.
+  function closeAdminMenu() {
+    document.getElementById('adminMenu').hidden = true;
+    document.getElementById('adminMenuBtn').setAttribute('aria-expanded', 'false');
+  }
+  document.getElementById('adminMenuBtn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    var menu = document.getElementById('adminMenu');
+    menu.hidden = !menu.hidden;
+    this.setAttribute('aria-expanded', String(!menu.hidden));
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#adminMenu .admin-item'), function (b) {
+    b.addEventListener('click', closeAdminMenu);
+  });
+  document.addEventListener('click', function (e) {
+    if (!document.getElementById('adminMenuWrap').contains(e.target)) closeAdminMenu();
+  });
+
   document.getElementById('logLink').addEventListener('click', function () { openLogModal(); });
 
   /* ---------------- BACKUP TO GOOGLE SHEET ---------------- */
@@ -2064,7 +2099,7 @@
   document.getElementById('signOutBtn').addEventListener('click', signOut);
 
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { closeFormModal(); closeViewModal(); closeRestoreModal(); }
+    if (e.key === 'Escape') { closeFormModal(); closeViewModal(); closeRestoreModal(); closeAdminMenu(); }
   });
 
   /* ---------------- INIT ---------------- */

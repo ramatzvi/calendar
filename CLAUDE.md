@@ -67,23 +67,28 @@ latest session. Full implementation detail for each lives in
 - **Access**: a guest (not signed in) sees a static "צפייה בלבד" badge; a
   signed-in non-editor sees the same badge via `refreshCanEdit()`, instead
   of only discovering it after a failed save.
-- **Change log**: every insert/update/delete on `events` is mirrored both to
-  a Google Sheet and to a `change_log` table in Postgres — see "Change log
-  (audit trail)" below. A small square icon button (document glyph, styled
-  like `#addEventBtn`) in the header's top row — immediately to its right,
-  visible only to `adi.landshaft@gmail.com` and `ofir.landshaft@gmail.com` —
-  opens a separate popup window (not an in-page modal) showing the
-  Postgres copy, oldest first, with a "מחק שינויים" button to clear it —
-  see "Change log (audit trail)" → "Viewing/clearing the log from the
-  app".
-- **Backup**: a floppy-with-sync-arrows icon button (`#backupBtn`, next to the
-  log button, same two emails only) saves every event from one month before
-  the click to one year ahead into a **new Google Sheet in the Drive of the account that owns the Apps Script (`ramatzvi2022`)** —
-  see "Backup to Google Sheet" below.
-- **Restore**: a counter-clockwise-arrow icon button (`#restoreBtn`, same two
-  emails) opens a modal to restore events from a backup sheet — add missing
-  and/or update changed, with a preview; see "Restore from a backup".
-- **Locations** (9): בית העם, בית אופיר, חורשת נועם, מגרש, דשא מרכזי,
+- **Admin menu ("ניהול")**: one outlined gear button in the header's top row
+  (`#adminMenuBtn`, left of the view tabs, next to the blue "+ הוספת אירוע")
+  opens a dropdown (`#adminMenu`) with the three admin tools, each with icon
+  + text. The whole menu (`#adminMenuWrap`) is visible only to
+  `adi.landshaft@gmail.com` and `ofir.landshaft@gmail.com` (`canViewLog()`;
+  the real gates are the `is_log_viewer()` checks in Postgres). It replaced
+  three look-alike blue square icon buttons — only "+ הוספת אירוע" stays a
+  filled blue button. The items keep their old ids (`#logLink`, `#backupBtn`,
+  `#restoreBtn`); the menu closes on item click, outside click and Escape.
+  - **יומן שינויים** (`#logLink`): every insert/update/delete on `events` is
+    mirrored both to a Google Sheet and to a `change_log` table in Postgres —
+    see "Change log (audit trail)" below. Opens a separate popup window (not
+    an in-page modal) showing the Postgres copy, oldest first, with a
+    "מחק שינויים" button to clear it — see "Viewing/clearing the log from the
+    app".
+  - **גיבוי ל-Google Sheet** (`#backupBtn`): saves every event from one month
+    before the click to one year ahead into a **new Google Sheet in the
+    CalendarBackup Drive folder of the account that owns the Apps Script
+    (`ramatzvi2022`)** — see "Backup to Google Sheet" below.
+  - **שחזור מגיבוי** (`#restoreBtn`): opens a modal to restore events from a
+    backup sheet — add missing and/or update changed, with a preview; see
+    "Restore from a backup".- **Locations** (9): בית העם, בית אופיר, חורשת נועם, מגרש, דשא מרכזי,
   מועדון, בית כנסת, השכרת ציוד, and `אחר` (reveals a free-text field).
 - **Month-view chips**: intentionally **no truncation** — a long title wraps
   onto as many lines as it needs (no `line-clamp`), matching a reference

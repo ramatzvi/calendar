@@ -74,21 +74,19 @@ headers). The form's `#evtAllDay` checkbox hides/clears `#timeFields`;
   - `#authSignedIn` (hidden by default) → `#authAvatar` (img), `#authName`
     (span), `#authViewOnly` (badge, shown when signed in but not an editor),
     `#signOutBtn` ("התנתקות")
-  - `#logLink` lives in the header's top row, not the auth row — a small
-    icon-only square button (document/log glyph) styled like `#addEventBtn`
-    (`btn-primary`). Both buttons are wrapped together in one
-    `<div class="... ms-auto">` right after the view-tabs, placed before
-    `#addEventBtn` in the DOM so in this RTL layout `#logLink` renders just
-    to its right; `ms-auto` pins the pair to the trailing (left) edge of
-    whichever flex-wrap line they land on, instead of relying on the
-    parent's `justify-between` to do it (which only worked by coincidence
-    for some viewport widths — see git history if this regresses). On
-    narrow/mobile widths `#addEventBtn`'s label collapses to icon-only
-    (`<span class="hidden sm:inline">`) and its box shrinks to the same
-    `w-8 h-8` square as `#logLink` (`sm:w-auto sm:h-auto` restores the
-    labeled size at the `sm` breakpoint) so the two stay the same size.
-    Shown only for `canViewLog()` — see "Change log viewer" below.
-- `renderAuthUI()` toggles those two blocks, fills avatar/name/badge, and also
+  - **Admin menu** — `#adminMenuWrap` (hidden unless `canViewLog()`, toggled
+    in `renderAuthUI()`) sits in the same `ms-auto` wrapper as
+    `#addEventBtn`, which pins the pair to the trailing (left) edge of
+    whichever flex-wrap line they land on (the parent's `justify-between`
+    only did that by coincidence). It holds `#adminMenuBtn` (outlined gear
+    button, `h-8`; label "ניהול" hidden below `sm`) and `#adminMenu`, an
+    absolutely positioned dropdown (`left-0 top-full`, so it opens toward the
+    screen even though the button is at the left edge) with three
+    `.admin-item` buttons: `#logLink`, `#backupBtn`, `#restoreBtn`. The
+    "ADMIN MENU" JS block closes it on item click / outside click / Escape
+    and keeps `aria-expanded` in sync. `#addEventBtn` collapses to an
+    icon-only `w-8 h-8` square below `sm` (`sm:w-auto sm:h-auto` restores
+    the labeled size) so both fit on one line next to the view tabs.- `renderAuthUI()` toggles those two blocks, fills avatar/name/badge, and also
   toggles `#addEventBtn`'s `hidden` (`!isEditor()`) — it's the one place that
   reacts to every auth state change.
 - `#brandLogo` (`RamatZviLogo.png`) is absolutely positioned in the header's
@@ -252,7 +250,7 @@ window name).
 
 ## Backup button ("גיבוי")
 
-`#backupBtn` (header, inside the same `ms-auto` wrapper as `#logLink`;
+`#backupBtn` (an item in the header "ניהול" menu, `#adminMenu`;
 visibility = `canViewLog()`, i.e. the same two emails; real gate is
 `is_log_viewer()` inside the RPCs). Click handler (after the `#logLink`
 handler): disables the button (`backupRunning` guard) → `sb.rpc('backup_events')`
@@ -265,7 +263,7 @@ the URL goes through `escapeAttr`). Server side and sheet layout:
 
 ## Restore modal ("שחזור")
 
-`#restoreBtn` (same wrapper/visibility as the other admin buttons) →
+`#restoreBtn` (another item in the "ניהול" menu) →
 `openRestoreModal()`: `restoreCall(action, fileId)` = `restore_request` RPC +
 `pollBackupResult` (shared with backup) → parsed Apps Script JSON.
 `previewRestore()` → `restore_preview` → `renderRestorePreview(confirming)`
