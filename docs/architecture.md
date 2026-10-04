@@ -78,7 +78,7 @@ headers). The form's `#evtAllDay` checkbox hides/clears `#timeFields`;
     in `renderAuthUI()`) sits in the same `ms-auto` wrapper as
     `#addEventBtn`, which pins the pair to the trailing (left) edge of
     whichever flex-wrap line they land on (the parent's `justify-between`
-    only did that by coincidence). It holds `#adminMenuBtn` (outlined gear
+    only did that by coincidence) and carries `-me-12 sm:me-0`: the header row has `pl-16` to keep clear of the absolutely positioned logo, but below `sm` this pair always lands on a lower row (the logo ends at y=52, the pair starts at y>=60), so the negative margin cancels that padding and puts the buttons flush at the left edge (x=16, mirroring the right padding). It holds `#adminMenuBtn` (outlined gear
     button, `h-8`; label "ניהול" hidden below `sm`) and `#adminMenu`, an
     absolutely positioned dropdown (`left-0 top-full`, so it opens toward the
     screen even though the button is at the left edge) with three
