@@ -76,6 +76,10 @@ latest session. Full implementation detail for each lives in
   Postgres copy, oldest first, with a "מחק שינויים" button to clear it —
   see "Change log (audit trail)" → "Viewing/clearing the log from the
   app".
+- **Backup**: a floppy-with-sync-arrows icon button (`#backupBtn`, next to the
+  log button, same two emails only) saves every event from one month before
+  the click to one year ahead into a **new Google Sheet in Ofir's Drive** —
+  see "Backup to Google Sheet" below.
 - **Locations** (9): בית העם, בית אופיר, חורשת נועם, מגרש, דשא מרכזי,
   מועדון, בית כנסת, השכרת ציוד, and `אחר` (reveals a free-text field).
 - **Month-view chips**: intentionally **no truncation** — a long title wraps
@@ -305,6 +309,34 @@ it entirely, since Postgres calling Apps Script (fire-and-forget, secret-gated)
 was always fine — it's the reverse direction (Apps Script calling out to
 Supabase) that's blocked.
 
+## Backup to Google Sheet
+
+`#backupBtn` → `sb.rpc('backup_events')` (Postgres, `security definer`,
+re-checks `is_log_viewer()`): selects events with `date` between
+(today − 1 month) and (today + 1 year) (Israel date), and sends them with
+`net.http_post` to the **same Apps Script webhook + `SHARED_SECRET`** as the
+audit trail, as `{secret, action:'backupEvents', who, from, to, events:[…]}`.
+The Apps Script (`handleBackup`, SpreadsheetApp only — no UrlFetchApp) runs
+as Ofir and creates `גיבוי לוח אירועים רמת צבי <yyyy-MM-dd HH-mm>` in his
+Drive root with two tabs:
+- `events` — header row = exactly the `public.events` column names (`id,
+  title, date, start_time, end_time, location, description, series_id,
+  updated_at, created_by`), one event per row, **all cells plain text**
+  (`@` format set before writing, so dates/times aren't coerced and a title
+  like `=1+1` can't become a formula). Dates `YYYY-MM-DD`, times `HH:MM`,
+  empty start/end = all-day, empty `series_id` = one-off. Re-import = export
+  the tab as CSV → Supabase Table editor → Import (keep `id` only if the
+  rows were deleted first, else drop that column).
+- `מידע` — when/who/range/count + the import notes above.
+
+`backup_events()` returns the pg_net request id; the client polls
+`backup_result(id)` (reads `net._http_response`, also viewer-gated) every 2s
+for up to 60s and shows a toast with a link to the new sheet. If pg_net
+didn't follow Apps Script's 302 and the content isn't JSON, a 2xx status
+still gets a generic "saved to Drive" toast. The file lands in **Ofir's**
+Drive even when Adi clicks (the script runs as the deployer); sharing it
+with Adi would need Drive scopes we haven't added.
+
 ## Syncing from the original roster Google Sheet
 
 Ofir's community keeps its own working roster in a Google Sheet ("Copy of
@@ -435,3 +467,9 @@ and Save.
     `delete from public.change_log where true`, not a bare `delete from
     public.change_log`. Keep this in mind for any future "clear a whole
     table" function.
+13. **Editing the Apps Script requires "Manage deployments → pencil on the
+    deployment whose URL the Postgres functions use → New version".** The
+    URL baked into `log_event_change()`/`backup_events()` ends in
+    `…zAyda0aeuByQ_ey2axHgJ0H9bxBwF9jYmogFw_k2iH-1haeCLAxg2M9HGe2imPo8Tp/exec`;
+    other deployments created while debugging UrlFetchApp (URLs ending
+    `…z_Es3i…`, `…wiWVO…`, `…xIq7Z…`) are unused leftovers and can be archived.

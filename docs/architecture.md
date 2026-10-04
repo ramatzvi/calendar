@@ -250,6 +250,19 @@ window name).
   same two-step pattern `renderViewFooter()` uses for deleting an event.
   Confirming calls `clearChangeLogRequest()` then reloads the table.
 
+## Backup button ("גיבוי")
+
+`#backupBtn` (header, inside the same `ms-auto` wrapper as `#logLink`;
+visibility = `canViewLog()`, i.e. the same two emails; real gate is
+`is_log_viewer()` inside the RPCs). Click handler (after the `#logLink`
+handler): disables the button (`backupRunning` guard) → `sb.rpc('backup_events')`
+→ `pollBackupResult(reqId, 30)` (recursive `backup_result` RPC, 2s apart) →
+parses the Apps Script's JSON `{ok, url, rows}` out of `content` →
+`showBackupDone()` (toast whose `innerHTML` holds a link to the sheet, 20s;
+the URL goes through `escapeAttr`). Server side and sheet layout:
+`CLAUDE.md` → "Backup to Google Sheet". SQL lives in Supabase only
+(`backup_events`, `backup_result`), same as the other RPCs.
+
 ## Seed / fallback data
 
 `seedEvents()` returns ~16 sample Ramat Zvi events. It's what renders for the

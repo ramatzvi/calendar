@@ -302,6 +302,17 @@
           <path d="M5.5 8.5h5M5.5 10.8h5M5.5 6.2h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
         </svg>
       </button>
+      <button id="backupBtn" type="button" hidden aria-label="גיבוי אירועים ל-Google Sheet" title="גיבוי אירועים ל-Google Sheet" class="w-8 h-8 grid place-items-center rounded-md btn-primary transition-colors shrink-0">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 21V4a1 1 0 0 1 1-1h10.2a1 1 0 0 1 .7.3l3.8 3.8a1 1 0 0 1 .3.7V9"/>
+          <path d="M7 3v5h6V3"/>
+          <path d="M3 21h5"/>
+          <path d="M20.2 16.2a4.4 4.4 0 0 0-7.9-1.2"/>
+          <path d="M12.3 12.8l0 2.4 2.4 0"/>
+          <path d="M12.8 19.8a4.4 4.4 0 0 0 7.9-1.2"/>
+          <path d="M20.7 21.2l0-2.4-2.4 0"/>
+        </svg>
+      </button>
       <button id="addEventBtn" type="button" hidden class="w-8 h-8 sm:w-auto sm:h-auto grid sm:flex place-items-center sm:gap-1 sm:px-3 sm:py-1.5 rounded-md text-sm font-semibold font-display btn-primary transition-colors shrink-0">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         <span class="hidden sm:inline">הוספת אירוע</span>
@@ -655,6 +666,7 @@
     }
     document.getElementById('addEventBtn').hidden = !isEditor();
     document.getElementById('logLink').hidden = !canViewLog();
+    document.getElementById('backupBtn').hidden = !canViewLog();
   }
 
   function setSyncStatus(msg) {
@@ -1744,6 +1756,64 @@
   }
 
   document.getElementById('logLink').addEventListener('click', function () { openLogModal(); });
+
+  /* ---------------- BACKUP TO GOOGLE SHEET ---------------- */
+
+  // backup_events() (Postgres RPC, is_log_viewer()-gated) sends the events
+  // from one month ago to one year ahead to the Apps Script webhook, which
+  // creates a new Sheet in Drive. It returns a pg_net request id; we poll
+  // backup_result(id) for the Apps Script's answer (the new sheet's URL).
+  var backupRunning = false;
+
+  function pollBackupResult(reqId, tries) {
+    return sb.rpc('backup_result', { p_id: reqId }).then(function (res) {
+      if (res.error) throw res.error;
+      if (res.data) return res.data;
+      if (tries <= 0) throw new Error('timeout');
+      return new Promise(function (resolve) { setTimeout(resolve, 2000); })
+        .then(function () { return pollBackupResult(reqId, tries - 1); });
+    });
+  }
+
+  function showBackupDone(url, rows) {
+    var el = document.getElementById('toast');
+    el.innerHTML = 'הגיבוי הושלם (' + rows + ' אירועים) — ' +
+      '<a href="' + escapeAttr(url) + '" target="_blank" rel="noopener" class="underline font-bold">פתיחת הקובץ</a>';
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.hidden = true; }, 20000);
+  }
+
+  document.getElementById('backupBtn').addEventListener('click', function () {
+    if (!canViewLog() || backupRunning) return;
+    var btn = this;
+    backupRunning = true;
+    btn.disabled = true;
+    btn.classList.add('opacity-60');
+    showToast('מגבה אירועים ל-Google Sheet…');
+    sb.rpc('backup_events').then(function (res) {
+      if (res.error) throw res.error;
+      return pollBackupResult(res.data, 30);
+    }).then(function (r) {
+      var out = null;
+      try { out = JSON.parse(r.content); } catch (e) { /* not JSON (e.g. a redirect page) */ }
+      if (out && out.ok && out.url) {
+        showBackupDone(out.url, out.rows);
+      } else if (r.status_code >= 200 && r.status_code < 400) {
+        showToast('הגיבוי נשלח — הקובץ נשמר ב-Drive.');
+      } else {
+        console.error('backup failed:', r);
+        showToast('הגיבוי נכשל.');
+      }
+    }).catch(function (err) {
+      console.error('backup failed:', err);
+      showToast(err && err.message === 'timeout' ? 'הגיבוי לא הסתיים בזמן — בדוק ב-Drive.' : 'הגיבוי נכשל (אין הרשאה, או שגיאת רשת).');
+    }).then(function () {
+      backupRunning = false;
+      btn.disabled = false;
+      btn.classList.remove('opacity-60');
+    });
+  });
 
   function parseDateKey(key) {
     var p = key.split('-');
