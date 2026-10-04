@@ -80,6 +80,9 @@ latest session. Full implementation detail for each lives in
   log button, same two emails only) saves every event from one month before
   the click to one year ahead into a **new Google Sheet in the Drive of the account that owns the Apps Script (`ramatzvi2022`)** —
   see "Backup to Google Sheet" below.
+- **Restore**: a counter-clockwise-arrow icon button (`#restoreBtn`, same two
+  emails) opens a modal to restore events from a backup sheet — add missing
+  and/or update changed, with a preview; see "Restore from a backup".
 - **Locations** (9): בית העם, בית אופיר, חורשת נועם, מגרש, דשא מרכזי,
   מועדון, בית כנסת, השכרת ציוד, and `אחר` (reveals a free-text field).
 - **Month-view chips**: intentionally **no truncation** — a long title wraps
@@ -342,6 +345,31 @@ didn't follow Apps Script's 302 and the content isn't JSON, a 2xx status
 still gets a generic "saved to Drive" toast. The file lands in the script
 owner's Drive no matter who clicks (the script runs as the deployer);
 sharing it with others would need Drive scopes we haven't added.
+
+### Restore from a backup (`#restoreBtn`)
+
+Same two emails. Opens an in-page modal (`#restoreModalBackdrop`), all
+server-side like the backup:
+1. `restore_request('listBackups')` → Apps Script lists the Sheets named
+   `גיבוי לוח אירועים…` in the CalendarBackup folder (newest first, max 25);
+   the client polls `backup_result(id)` for the answer.
+2. User picks one → `restore_request('readBackup', fileId)` → Apps Script
+   returns the `events` tab rows (only files that sit in the backup folder
+   are readable). Then `restore_preview(reqId)` compares them to `events`
+   **by `id`**: *new* (id missing), *changed* (id exists, any of title/date/
+   start/end/location/description/series_id differs, shown as old ← new),
+   *same*, *invalid* (missing id/title/date/location — skipped). New rows that
+   match an existing event on date+title+location under a different id are
+   flagged "maybe duplicate" (event deleted and re-created by hand).
+3. Mode: `add_update` (default — add missing and overwrite changed; changes
+   made since the backup are lost) or `add` (only add missing). Two-step
+   confirm, then `restore_apply(reqId, mode)`. **Never deletes.** One
+   transaction, so a failure writes nothing. The events trigger logs each
+   inserted/updated row with the restorer as `who`.
+The browser never sends event data back: preview/apply parse the Apps
+Script's stored response in `net._http_response` (pg_net keeps it ~6h), via
+`public._restore_rows(reqId)`. SQL: `restore_request`, `_restore_rows`,
+`restore_preview`, `restore_apply` (all `security definer`, `is_log_viewer()`-gated).
 
 ## Syncing from the original roster Google Sheet
 

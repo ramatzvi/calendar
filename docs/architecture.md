@@ -263,6 +263,18 @@ the URL goes through `escapeAttr`). Server side and sheet layout:
 `CLAUDE.md` → "Backup to Google Sheet". SQL lives in Supabase only
 (`backup_events`, `backup_result`), same as the other RPCs.
 
+## Restore modal ("שחזור")
+
+`#restoreBtn` (same wrapper/visibility as the other admin buttons) →
+`openRestoreModal()`: `restoreCall(action, fileId)` = `restore_request` RPC +
+`pollBackupResult` (shared with backup) → parsed Apps Script JSON.
+`previewRestore()` → `restore_preview` → `renderRestorePreview(confirming)`
+(radio `add_update`/`add`, `<details>` lists, two-step confirm) →
+`applyRestore()` → `restore_apply`, then `loadEvents()`. Modal state is the
+`restoreCtx` object; Escape/backdrop/× call `closeRestoreModal()`. Time
+ranges are wrapped in `LRI…PDI` like everywhere else so RTL doesn't flip
+`19:00–21:00`. Server side: `CLAUDE.md` → "Restore from a backup".
+
 ## Seed / fallback data
 
 `seedEvents()` returns ~16 sample Ramat Zvi events. It's what renders for the
