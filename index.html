@@ -1028,7 +1028,7 @@
         var loc = locationById(ev.location);
         var timeLabel = ev.start ? '<span class="font-mono tabular">' + formatClock(ev.start) + '</span> ' : '';
         html += '<button data-view-event="' + ev.id + '" class="chip text-start text-[11px] font-body font-medium leading-tight px-1 py-0.5 rounded break-words" style="--loc:' + loc.color + '" title="' + escapeAttr(ev.title) + '">' +
-          timeLabel + escapeHtml(ev.title) + '</button>';
+          timeLabel + recurIcon(ev) + escapeHtml(ev.title) + '</button>';
       });
       if (extra > 0) {
         html += '<button data-goto-day="' + key + '" class="text-start text-[11px] font-display font-semibold text-ink2 hover:text-accent px-1.5">עוד ' + extra + '</button>';
@@ -1075,7 +1075,7 @@
         html += '<div class="border-s-2 border-black p-0.5 flex flex-col gap-0.5 min-w-0">';
         ad.forEach(function (ev) {
           var loc = locationById(ev.location);
-          html += '<button data-view-event="' + ev.id + '" class="chip block w-full text-start text-[11px] font-body font-medium leading-tight px-1 py-0.5 rounded break-words" style="--loc:' + loc.color + '" title="' + escapeAttr(ev.title) + '">' + escapeHtml(ev.title) + '</button>';
+          html += '<button data-view-event="' + ev.id + '" class="chip block w-full text-start text-[11px] font-body font-medium leading-tight px-1 py-0.5 rounded break-words" style="--loc:' + loc.color + '" title="' + escapeAttr(ev.title) + '">' + recurIcon(ev) + escapeHtml(ev.title) + '</button>';
         });
         html += '</div>';
       });
@@ -1112,7 +1112,7 @@
         var widthPct = 100 / p.totalCols;
         var rightPct = p.col * widthPct;
         html += '<button data-view-event="' + p.ev.id + '" class="event-block absolute rounded-md text-start text-[11px] font-body font-medium leading-tight px-1.5 py-1 overflow-hidden" style="--loc:' + loc.color + '; top:' + top + 'px; height:' + height + 'px; right:calc(' + rightPct + '% + 2px); width:calc(' + widthPct + '% - 4px);">' +
-          '<div class="truncate font-semibold">' + escapeHtml(p.ev.title) + '</div>' +
+          '<div class="truncate font-semibold">' + recurIcon(p.ev) + escapeHtml(p.ev.title) + '</div>' +
           '<div class="truncate font-mono tabular opacity-80">' + formatClock(p.ev.start) + '</div>' +
           '</button>';
       });
@@ -1568,7 +1568,7 @@
     var d = parseDateKey(ev.date);
 
     document.getElementById('viewAccentBar').style.background = loc.color;
-    document.getElementById('viewTitle').textContent = ev.title;
+    document.getElementById('viewTitle').innerHTML = recurIcon(ev) + escapeHtml(ev.title);
     document.getElementById('viewDate').textContent = DAY_NAMES_FULL[d.getDay()] + ', ' + d.getDate() + ' ' + MONTH_NAMES_PREFIXED[d.getMonth()] + ' ' + d.getFullYear();
     document.getElementById('viewTime').textContent = formatTimeRange(ev.start, ev.end);
     document.getElementById('viewLocation').textContent = loc.name;
@@ -2051,6 +2051,13 @@
     });
   }
   function escapeAttr(s) { return escapeHtml(s); }
+
+  // Two circular arrows, shown next to the title of every occurrence of a
+  // recurring event (ev.seriesId set). Sized in em so it follows the text.
+  function recurIcon(ev) {
+    if (!ev.seriesId) return '';
+    return '<svg role="img" aria-label="אירוע חוזר" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;width:.95em;height:.95em;vertical-align:-.1em;margin-inline-end:2px;flex:none"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+  }
 
   /* ---------------- EVENT DELEGATION ---------------- */
 

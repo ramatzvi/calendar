@@ -60,6 +60,10 @@ latest session. Full implementation detail for each lives in
   override option) on a same-date/location/overlapping-hours conflict,
   including against all-day events (an all-day event conflicts with
   anything that day at that location).
+- **Recurring marker**: every occurrence of a recurring event (`ev.seriesId`
+  set) shows a small two-circular-arrows icon before its title — month
+  chips, the all-day band, week/day blocks and the event dialog title.
+  Built by `recurIcon(ev)` (inline SVG, `currentColor`, em-sized).
 - **Edit/delete a series member**: a "this / this-and-following / all"
   scope chooser appears first. The bulk paths can also *shift* every
   affected occurrence's date by the same offset if the date field is

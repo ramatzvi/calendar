@@ -127,6 +127,11 @@ column on `events`, no FK, no separate `series` table, no extra RLS — a bulk
 `editors` policies). Each occurrence is still a completely normal `events`
 row otherwise, so all existing rendering/query code needed zero changes.
 
+**Marker**: the only rendering touch is `recurIcon(ev)` — an inline SVG of two
+circular arrows, returned only when `ev.seriesId` is set. It is prepended to
+the title in `renderMonth` chips, the all-day band and week/day blocks in
+`renderTimeGrid`, and `#viewTitle` in `openViewModal`.
+
 **Add** (`openAddModal`/submit handler): `#evtRecurring` reveals
 `#evtRecurFreq` (daily/weekly/monthly/yearly) and `#evtRecurUntil` (an
 inclusive end date, required).
